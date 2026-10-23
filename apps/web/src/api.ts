@@ -171,6 +171,12 @@ export const draftsApi = {
   async duplicate(id: string): Promise<{ draft: OrderDraft; qr: { deliveryUrl: string; customerUrl: string } }> {
     return api<{ draft: OrderDraft; qr: { deliveryUrl: string; customerUrl: string } }>(`/drafts/${encodeURIComponent(id)}/duplicate`, { method: 'POST' });
   },
+  async reprint(id: string): Promise<{ draftId: string; productName: string; quantity: number; qr: { deliveryUrl: string; customerUrl: string } }> {
+    return api<{ draftId: string; productName: string; quantity: number; qr: { deliveryUrl: string; customerUrl: string } }>(`/drafts/${encodeURIComponent(id)}/reprint`, { method: 'POST' });
+  },
+  async revoke(id: string): Promise<{ status: string; revokedAt: string }> {
+    return api<{ status: string; revokedAt: string }>(`/drafts/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
+  },
   async archive(id: string): Promise<void> {
     return api<void>(`/drafts/${encodeURIComponent(id)}/archive`, { method: 'POST' });
   },

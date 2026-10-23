@@ -16,8 +16,8 @@ export async function workflowFixture(demo = true) {
   const login = await fetch(`${server.url}/api/auth/login`, { method: 'POST', headers, body: JSON.stringify({ email: seller.email, password }) });
   if (login.status !== 200) throw new Error(`Fixture login failed: ${login.status}`);
   const cookie = login.headers.get('set-cookie')!.split(';')[0]!;
-  const request = (path: string, body?: unknown, authenticated = true, extra: Record<string,string> = {}) => fetch(`${server.url}/api${path}`, {
-    method: body === undefined ? 'GET' : 'POST', headers: { ...headers, ...(authenticated ? { Cookie: cookie } : {}), ...extra },
+  const request = (path: string, body?: unknown, authenticated = true, extra: Record<string,string> = {}, method?: string) => fetch(`${server.url}/api${path}`, {
+    method: method ?? (body === undefined ? 'GET' : 'POST'), headers: { ...headers, ...(authenticated ? { Cookie: cookie } : {}), ...extra },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const create = async () => { const response = await request('/orders', orderInput); if (response.status !== 201) throw new Error('Fixture order failed'); return response.json(); };
@@ -27,7 +27,7 @@ export async function workflowFixture(demo = true) {
       const result = await transition(id, state); if (result.status !== 200) throw new Error(`Fixture dispatch failed: ${result.status}`);
     }
   };
-  return { prisma, config, seller, server, request, create, transition, dispatch,
+  return { prisma, config, seller, server, cookie, request, create, transition, dispatch,
     async close() {
       await server.close();
       await prisma.ledgerEntry.deleteMany({ where: { sellerId: seller.id } });

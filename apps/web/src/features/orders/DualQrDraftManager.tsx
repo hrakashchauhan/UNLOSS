@@ -140,6 +140,42 @@ export function DualQrDraftManager({ onOrderActivated }: { onOrderActivated?: (o
     }
   }
 
+  async function handleReprint() {
+    if (!activeDraft) return;
+    setLoading(true);
+    setError('');
+    try {
+      const reprinted = await draftsApi.reprint(activeDraft.draft.id);
+      setActiveDraft({
+        ...activeDraft,
+        qr: reprinted.qr,
+      });
+      setSuccess('QR tokens verified and reprinted.');
+      await loadDrafts();
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRevoke() {
+    if (!activeDraft) return;
+    if (!window.confirm('Are you sure you want to revoke these QR codes? Scans will immediately stop working.')) return;
+    setLoading(true);
+    setError('');
+    try {
+      await draftsApi.revoke(activeDraft.draft.id);
+      setActiveDraft(null);
+      setSuccess('QR tokens have been revoked.');
+      await loadDrafts();
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleArchive() {
     if (!activeDraft) return;
     if (!window.confirm('Are you sure you want to revoke these QR codes and archive this draft?')) return;
@@ -318,11 +354,17 @@ export function DualQrDraftManager({ onOrderActivated }: { onOrderActivated?: (o
               <button className="button subtle" onClick={handleDuplicate} disabled={loading} title="Duplicate this draft with new QR tokens">
                 <Layers size={14} style={{ marginRight: '4px' }} /> Duplicate
               </button>
+              <button className="button subtle" onClick={handleReprint} disabled={loading} title="Reprint or re-verify active QR tokens">
+                <RefreshCw size={14} style={{ marginRight: '4px' }} /> Reprint QR
+              </button>
               <button className="button subtle" onClick={() => window.print()} title="Print shipping labels sheet">
                 <Printer size={14} style={{ marginRight: '4px' }} /> Print Label Sheet
               </button>
-              <button className="button subtle" style={{ color: '#d74032' }} onClick={handleArchive} disabled={loading} title="Archive draft and revoke tokens">
-                <Archive size={14} style={{ marginRight: '4px' }} /> Revoke & Archive
+              <button className="button subtle" style={{ color: '#d74032' }} onClick={handleRevoke} disabled={loading} title="Revoke QR tokens immediately">
+                <Archive size={14} style={{ marginRight: '4px' }} /> Revoke QR
+              </button>
+              <button className="button subtle" style={{ color: '#888' }} onClick={handleArchive} disabled={loading} title="Archive draft and revoke tokens">
+                Archive Draft
               </button>
             </div>
           </div>

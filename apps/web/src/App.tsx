@@ -7,6 +7,7 @@ import {Dashboard, RewardsPage, NotificationsPage, ReportsPage} from './features
 import {PartnerDemo, DemoHome} from './features/demo/PartnerDemo';
 import {SettingsPage} from './features/settings/Settings';
 import {PublicFlow} from './features/public/PublicFlow';
+import {DraftPublicView} from './features/public/DraftPublicView';
 import {DeliveryDashboard} from './features/delivery/DeliveryDashboard';
 import {CustomerDashboard} from './features/customer/CustomerDashboard';
 import {AdminDashboard} from './features/admin/AdminDashboard';
@@ -19,6 +20,8 @@ export function App(){
   <Route path="/" element={<Navigate to="/dashboard" replace/>}/>
   <Route path="/delivery/:token" element={<PublicRoute kind="delivery"/>}/>
   <Route path="/customer/:token" element={<PublicRoute kind="customer"/>}/>
+  <Route path="/draft/delivery/:token" element={<DraftPublicView kind="delivery"/>}/>
+  <Route path="/draft/customer/:token" element={<DraftPublicView kind="customer"/>}/>
   {DEMO_ENABLED && <><Route path="/demo" element={<DemoHome/>}/>
   <Route path="/demo/partners" element={<PartnerDemo/>}/>
   <Route path="/demo/delivery" element={<PublicFlow key="demo-delivery" kind="delivery" token="" demo/>}/>

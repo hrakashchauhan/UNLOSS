@@ -8,7 +8,17 @@ import { err } from './http.js';
 import { hashToken } from './rules.js';
 
 const encryptToken = (token: string) => Buffer.from(token).toString('base64url');
+const decryptToken = (encrypted: string) => Buffer.from(encrypted, 'base64url').toString('utf8');
 const createTokenPair = () => ({ delivery: randomBytes(32).toString('base64url'), customer: randomBytes(32).toString('base64url') });
+
+function formatDraftQr(tokens: any[], appOrigin: string) {
+  const deliveryTok = tokens.find((t: any) => t.purpose === 'DELIVERY' && !t.revokedAt);
+  const customerTok = tokens.find((t: any) => t.purpose === 'CUSTOMER' && !t.revokedAt);
+  return {
+    deliveryUrl: deliveryTok?.encryptedToken ? `${appOrigin}/draft/delivery/${decryptToken(deliveryTok.encryptedToken)}` : null,
+    customerUrl: customerTok?.encryptedToken ? `${appOrigin}/draft/customer/${decryptToken(customerTok.encryptedToken)}` : null,
+  };
+}
 
 export function registerProductRoutes(app: Express, prisma: PrismaClient, config: Config) {
   const auth = requireSeller(prisma, config);
@@ -29,7 +39,12 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
   app.get('/api/drafts', auth, async (_req, res) => {
     const sellerId = currentSeller(res).id;
     const items = await prisma.orderDraft.findMany({ where: { sellerId, archivedAt: null }, include: { product: true, tokens: true }, orderBy: { updatedAt: 'desc' } });
-    res.json({ items });
+    res.json({
+      items: items.map(d => ({
+        ...d,
+        qr: formatDraftQr(d.tokens, config.appOrigin),
+      })),
+    });
   });
 
   app.post('/api/drafts', auth, async (req, res) => {
@@ -47,14 +62,24 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
       ] });
       return { draft, product, tokens };
     });
-    res.status(201).json({ draft: result.draft, product: result.product, qr: { deliveryUrl: `${config.appOrigin}/draft/delivery/${tokens.delivery}`, customerUrl: `${config.appOrigin}/draft/customer/${tokens.customer}` }, status: 'AWAITING_ACTIVATION' });
+    res.status(201).json({
+      draft: { ...result.draft, qr: { deliveryUrl: `${config.appOrigin}/draft/delivery/${tokens.delivery}`, customerUrl: `${config.appOrigin}/draft/customer/${tokens.customer}` } },
+      product: result.product,
+      qr: { deliveryUrl: `${config.appOrigin}/draft/delivery/${tokens.delivery}`, customerUrl: `${config.appOrigin}/draft/customer/${tokens.customer}` },
+      status: 'AWAITING_ACTIVATION',
+    });
   });
 
   app.get('/api/drafts/:id', auth, async (req, res) => {
     const sellerId = currentSeller(res).id;
     const draft = await prisma.orderDraft.findFirst({ where: { id: String(req.params.id), sellerId }, include: { product: true, tokens: true } });
     if (!draft) throw err('NOT_FOUND', 'Draft not found', 404);
-    res.json({ draft });
+    res.json({
+      draft: {
+        ...draft,
+        qr: formatDraftQr(draft.tokens, config.appOrigin),
+      },
+    });
   });
 
   app.patch('/api/drafts/:id', auth, async (req, res) => {
@@ -63,7 +88,12 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
     const draft = await prisma.orderDraft.updateMany({ where: { id: String(req.params.id), sellerId, status: 'DRAFT' }, data: v });
     if (!draft.count) throw err('NOT_FOUND', 'Draft not found or not editable', 404);
     const updated = await prisma.orderDraft.findFirst({ where: { id: String(req.params.id), sellerId }, include: { product: true, tokens: true } });
-    res.json({ draft: updated });
+    res.json({
+      draft: {
+        ...updated,
+        qr: formatDraftQr(updated?.tokens || [], config.appOrigin),
+      },
+    });
   });
 
   app.post('/api/drafts/:id/duplicate', auth, async (req, res) => {
@@ -81,6 +111,61 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
       return draft;
     });
     res.status(201).json({ draft: dup, qr: { deliveryUrl: `${config.appOrigin}/draft/delivery/${tokens.delivery}`, customerUrl: `${config.appOrigin}/draft/customer/${tokens.customer}` } });
+  });
+
+  app.post('/api/drafts/:id/reprint', auth, async (req, res) => {
+    const sellerId = currentSeller(res).id;
+    const draft = await prisma.orderDraft.findFirst({
+      where: { id: String(req.params.id), sellerId, archivedAt: null },
+      include: { product: true, tokens: true },
+    });
+    if (!draft) throw err('NOT_FOUND', 'Draft not found', 404);
+
+    const activeDelivery = draft.tokens.find(t => t.purpose === 'DELIVERY' && !t.revokedAt && t.expiresAt > new Date());
+    const activeCustomer = draft.tokens.find(t => t.purpose === 'CUSTOMER' && !t.revokedAt && t.expiresAt > new Date());
+
+    let deliveryToken: string;
+    let customerToken: string;
+
+    if (activeDelivery && activeCustomer && activeDelivery.encryptedToken && activeCustomer.encryptedToken) {
+      deliveryToken = decryptToken(activeDelivery.encryptedToken);
+      customerToken = decryptToken(activeCustomer.encryptedToken);
+    } else {
+      const pair = createTokenPair();
+      deliveryToken = pair.delivery;
+      customerToken = pair.customer;
+      const expiresAt = new Date(Date.now() + config.qrTokenTtlDays * 864e5);
+      await prisma.$transaction(async tx => {
+        await tx.draftQrToken.updateMany({ where: { draftId: draft.id }, data: { revokedAt: new Date() } });
+        await tx.draftQrToken.createMany({
+          data: [
+            { draftId: draft.id, purpose: 'DELIVERY', tokenHash: hashToken(deliveryToken), encryptedToken: encryptToken(deliveryToken), expiresAt },
+            { draftId: draft.id, purpose: 'CUSTOMER', tokenHash: hashToken(customerToken), encryptedToken: encryptToken(customerToken), expiresAt },
+          ],
+        });
+      });
+    }
+
+    res.json({
+      draftId: draft.id,
+      productName: draft.product.name,
+      quantity: draft.quantity,
+      qr: {
+        deliveryUrl: `${config.appOrigin}/draft/delivery/${deliveryToken}`,
+        customerUrl: `${config.appOrigin}/draft/customer/${customerToken}`,
+      },
+    });
+  });
+
+  app.post('/api/drafts/:id/revoke', auth, async (req, res) => {
+    const sellerId = currentSeller(res).id;
+    const draft = await prisma.orderDraft.findFirst({ where: { id: String(req.params.id), sellerId } });
+    if (!draft) throw err('NOT_FOUND', 'Draft not found', 404);
+    await prisma.$transaction(async tx => {
+      await tx.draftQrToken.updateMany({ where: { draftId: draft.id }, data: { revokedAt: new Date() } });
+      await tx.orderDraft.update({ where: { id: draft.id }, data: { status: 'REVOKED' } });
+    });
+    res.json({ status: 'REVOKED', revokedAt: new Date().toISOString() });
   });
 
   app.post('/api/drafts/:id/archive', auth, async (req, res) => {
@@ -107,8 +192,8 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
       } });
       await tx.orderEvent.create({ data: { orderId: order.id, eventType: 'CREATED', toStatus: 'CREATED', actorType: 'SELLER', actorId: sellerId, source: config.demo ? 'DEMO' : 'MANUAL' } });
       await tx.qrToken.createMany({ data: [
-        { orderId: order.id, purpose: 'DELIVERY', tokenHash: hashToken(tokens.delivery), expiresAt },
-        { orderId: order.id, purpose: 'CUSTOMER', tokenHash: hashToken(tokens.customer), expiresAt },
+        { orderId: order.id, purpose: 'DELIVERY', tokenHash: hashToken(tokens.delivery), encryptedToken: encryptToken(tokens.delivery), expiresAt },
+        { orderId: order.id, purpose: 'CUSTOMER', tokenHash: hashToken(tokens.customer), encryptedToken: encryptToken(tokens.customer), expiresAt },
       ] });
       await tx.orderDraft.update({ where: { id: draft.id }, data: { status: 'ACTIVATED', activatedOrderId: order.id } });
       return order;
@@ -121,7 +206,19 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw err('TOKEN_INVALID', 'Token is invalid', 404);
     const dt = await prisma.draftQrToken.findUnique({ where: { tokenHash: hashToken(token) }, include: { draft: { include: { product: true } } } });
     if (!dt || dt.revokedAt || dt.expiresAt <= new Date()) throw err('TOKEN_INVALID', 'Token is invalid', 404);
-    if (dt.draft.status === 'ACTIVATED' || dt.draft.activatedOrderId) throw err('TOKEN_INVALID', 'Token is invalid', 404);
+    if (dt.draft.status === 'ACTIVATED' && dt.draft.activatedOrderId) {
+      const activeToken = await prisma.qrToken.findFirst({
+        where: { orderId: dt.draft.activatedOrderId, purpose: dt.purpose, revokedAt: null },
+      });
+      return res.json({
+        status: 'ACTIVATED',
+        orderId: dt.draft.activatedOrderId,
+        purpose: dt.purpose,
+        redirectUrl: activeToken?.encryptedToken
+          ? `/${dt.purpose.toLowerCase()}/${decryptToken(activeToken.encryptedToken)}`
+          : undefined,
+      });
+    }
     res.json({ status: 'AWAITING_ACTIVATION', purpose: dt.purpose, productName: dt.draft.product.name, quantity: dt.draft.quantity, hasRecipient: !!dt.draft.recipientName });
   });
 }
