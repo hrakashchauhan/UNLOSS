@@ -70,7 +70,7 @@ Authorized JavaScript origin: `https://unloss-web.vercel.app`.
 
 The browser loads Google Identity Services and sends its credential to the backend. The backend uses Google's official library to validate signature, expiry, audience and verified email. Accounts are identified by Google's stable subject. Existing password accounts are not silently linked by matching email. Existing Google accounts cannot gain roles merely by changing a login request.
 
-Google Audience shows **In production**, with External audience. Homepage and privacy URL are saved; https://unloss-web.vercel.app/privacy.html returns the published notice. Genuine Google sign-in is pending: the account chooser stalls on account selection in browser automation, and the owner has been asked to complete that step. Public configuration is complete, but an authenticated Google session has not yet been verified.
+Google Audience shows **In production**, with External audience. Homepage and privacy URL are saved; https://unloss-web.vercel.app/privacy.html returns the published notice. Genuine Google sign-in verified end to end on 24 October 2026: the owner account reached the seller dashboard, a full page reload restored the authenticated session, and the live event stream connected. The stalled popup was recovered by restarting sign-in with a live parent tab, reloading the Google chooser and completing account selection. No authentication checks were bypassed.
 
 ## 5. SMS deferred by owner; courier and payments incomplete
 
@@ -98,7 +98,7 @@ Do not label browser GPS as proof that a courier physically visited an address; 
 - [x] Proxied `/api/auth/me` returns 401 when signed out.
 - [x] Registration/login sets a Secure, HttpOnly, SameSite=Lax session cookie.
 - [x] Session restoration and logout invalidation verified via production HTTP requests. Temporary verification account removed afterward.
-- [ ] Genuine Google account sign-in verified end to end.
+- [x] Genuine Google account sign-in, dashboard loading, session restoration after reload and live event stream verified.
 - [x] Seller order/QR creation returned 201; direct customer/delivery pages returned 200. Preview APIs correctly rejected CREATED parcels (404) and returned 200 for the disposable OUT_FOR_DELIVERY fixture. Test records were removed.
 - Deferred by owner: real SMS verification; production endpoint correctly returns 503.
 - [ ] Customer decision and authorized courier completion verified across devices.
