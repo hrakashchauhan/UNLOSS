@@ -47,6 +47,6 @@ it('prevents seller impersonation of delivery/customer outcomes and revokes canc
   const { order } = await f.create();
   expect((await f.transition(order.id, 'DELIVERED_VERIFIED')).status).toBe(403);
   expect((await f.transition(order.id, 'CUSTOMER_REJECTED')).status).toBe(403);
-  expect((await f.transition(order.id, 'CANCELLED')).status).toBe(200);
+  expect((await f.transition(order.id, 'CANCELLED', 'SELLER_CANCELLED')).status).toBe(200);
   expect(await f.prisma.qrToken.count({ where: { orderId: order.id, revokedAt: null } })).toBe(0);
 });

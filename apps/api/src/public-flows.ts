@@ -90,6 +90,10 @@ export function registerPublicRoutes(app: Express, prisma: PrismaClient, config:
   app.post('/api/delivery/:token', async (req, res) => {
     await getQrToken(prisma, String(req.params.token), 'DELIVERY');
     const v = z.object({ outcome: z.enum(deliveryOutcomes), ...reasonFields }).parse(req.body);
+    if (v.outcome === 'ADDRESS_ISSUE' && !['ADDRESS_INCORRECT', 'ADDRESS_INCOMPLETE'].includes(v.reasonCode || '')) {
+      throw err('REASON_REQUIRED', 'Select the reported address issue', 400);
+    }
+    if (v.outcome === 'DELIVERED_VERIFIED' && v.reasonCode) throw err('VALIDATION_ERROR', 'Completion cannot include a failure reason', 400);
     const result = await prisma.$transaction(async tx => {
       const t = await lockedToken(tx, String(req.params.token), 'DELIVERY');
       const to = v.outcome === 'CUSTOMER_UNAVAILABLE' || v.outcome === 'ADDRESS_ISSUE' ? 'DELIVERY_FAILED' : v.outcome;
