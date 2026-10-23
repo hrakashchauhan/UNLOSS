@@ -32,6 +32,7 @@ afterAll(async () => {
     await server?.close();
     // Only rows belonging to the seller created by this test run are removed.
     if (fixtureSellerId) {
+      await prisma.notification.deleteMany({ where: { sellerId: fixtureSellerId } });
       await prisma.order.deleteMany({ where: { sellerId: fixtureSellerId } });
       await prisma.seller.delete({ where: { id: fixtureSellerId } });
     }

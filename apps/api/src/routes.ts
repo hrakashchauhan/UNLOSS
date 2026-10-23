@@ -1,22 +1,12 @@
-import type { Express, Request, Response, NextFunction } from 'express';
+import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
-import { err } from './http.js';
-import { currentSeller, requireSeller } from './auth.js';
 import type { Config } from './config.js';
 import { registerOrderRoutes } from './orders.js';
 import { registerPublicRoutes } from './public-flows.js';
-import { pagination as pag } from './domain.js';
+import { registerReportingRoutes } from './reporting.js';
 
-// Existing MVP handlers preserved for phased verification. See docs/BACKEND_PROGRESS.md.
 export function registerRoutes(app: Express, prisma: PrismaClient, config: Config) {
-registerOrderRoutes(app, prisma, config);
-registerPublicRoutes(app, prisma, config);
-function wrap(fn:(req:Request,res:Response)=>Promise<any>){return(req:Request,res:Response,next:NextFunction)=>Promise.resolve(fn(req,res)).catch(next)}
-const auth = requireSeller(prisma, config);
-app.get('/api/dashboard/summary',auth,wrap(async(req,res)=>{const sellerId=currentSeller(res).id;const [totalOrders,groups,reward]=await Promise.all([prisma.order.count({where:{sellerId}}),prisma.order.groupBy({by:['status'],where:{sellerId},_count:true}),prisma.ledgerEntry.aggregate({where:{sellerId},_sum:{amountPaise:true},_count:true})]);res.json({totalOrders,statusCounts:Object.fromEntries(groups.map((g:any)=>[g.status,g._count])),rewardTotalPaise:reward._sum.amountPaise||0})}));
-app.get('/api/rewards/ledger',auth,wrap(async(req,res)=>{const {page,pageSize}=pag(req.query),sellerId=currentSeller(res).id;const [items,total]=await Promise.all([prisma.ledgerEntry.findMany({where:{sellerId},skip:(page-1)*pageSize,take:pageSize,orderBy:{createdAt:'desc'}}),prisma.ledgerEntry.count({where:{sellerId}})]);res.json({items,page,pageSize,total})}));app.get('/api/rewards/summary',auth,wrap(async(req,res)=>{const a=await prisma.ledgerEntry.aggregate({where:{sellerId:currentSeller(res).id,type:'DELIVERY_REWARD'},_sum:{amountPaise:true},_count:true});res.json({creditCount:a._count,totalPaise:a._sum.amountPaise||0,currency:'INR'})}));
-app.get('/api/notifications',auth,wrap(async(req,res)=>{const {page,pageSize}=pag(req.query),where={sellerId:currentSeller(res).id};const [items,total]=await Promise.all([prisma.notification.findMany({where,skip:(page-1)*pageSize,take:pageSize,orderBy:{createdAt:'desc'}}),prisma.notification.count({where})]);res.json({items,page,pageSize,total})}));
-function monthBounds(month:string){if(!/^\d{4}-\d{2}$/.test(month))throw err('VALIDATION_ERROR','month must be YYYY-MM');const parts=month.split('-').map(Number);const y=parts[0]!,m=parts[1]!;const startUtc=Date.UTC(y,m-1,1)-330*60000,endUtc=Date.UTC(y,m,1)-330*60000;return [new Date(startUtc),new Date(endUtc)]}
-async function report(sellerId:string,month:string){const [start,end]=monthBounds(month) as [Date,Date];const events=await prisma.orderEvent.findMany({where:{order:{sellerId},createdAt:{gte:start,lt:end}}});const count=(s:string)=>events.filter((e:any)=>e.eventType===s).length;const reasonsCount:Record<string,number>={};for(const e of events as any[])if(e.reasonCode)reasonsCount[e.reasonCode]=(reasonsCount[e.reasonCode]||0)+1;const reward=await prisma.ledgerEntry.aggregate({where:{sellerId,type:'DELIVERY_REWARD',createdAt:{gte:start,lt:end}},_sum:{amountPaise:true},_count:true});const n=count('RETURNED_TO_SELLER'),d=count('OUT_FOR_DELIVERY');return{month,timezone:'Asia/Kolkata',periodStart:start.toISOString(),periodEnd:end.toISOString(),totalOrdersCreated:count('CREATED'),ordersDispatched:d,deliveryAttempts:count('DELIVERY_ATTEMPTED'),verifiedCompletions:count('DELIVERED_VERIFIED'),returnsToSeller:n,returnRate:d?n/d:null,returnRateNumerator:n,returnRateDenominator:d,redeliveryRequests:count('REDELIVERY_REQUESTED'),rewardCreditCount:reward._count,rewardTotalPaise:reward._sum.amountPaise||0,reasonCounts:reasonsCount}}
-app.get('/api/reports/monthly',auth,wrap(async(req,res)=>res.json(await report(currentSeller(res).id,String(req.query.month||'')))));app.get('/api/reports/monthly.csv',auth,wrap(async(req,res)=>{const r=await report(currentSeller(res).id,String(req.query.month||''));const keys=['month','timezone','period_start','period_end','total_orders_created','orders_dispatched','delivery_attempts','verified_completions','returns_to_seller','return_rate','return_rate_numerator','return_rate_denominator','redelivery_requests','reward_credit_count','reward_total_paise','reason_code','reason_count'];const rows=Object.entries(r.reasonCounts);if(!rows.length)rows.push(['',0] as any);const csv=[keys.join(','),...rows.map(([code,num])=>[r.month,r.timezone,r.periodStart,r.periodEnd,r.totalOrdersCreated,r.ordersDispatched,r.deliveryAttempts,r.verifiedCompletions,r.returnsToSeller,r.returnRate??'',r.returnRateNumerator,r.returnRateDenominator,r.redeliveryRequests,r.rewardCreditCount,r.rewardTotalPaise,code,num].map(x=>`"${String(x).replaceAll('"','""')}"`).join(','))].join('\r\n');res.type('text/csv').send(csv)}));
+  registerOrderRoutes(app, prisma, config);
+  registerPublicRoutes(app, prisma, config);
+  registerReportingRoutes(app, prisma, config);
 }

@@ -1,6 +1,7 @@
 import type { Order, Prisma } from '@prisma/client';
 import { assertTransition } from './domain.js';
 import { err } from './http.js';
+import { notifyEvent } from './notifications.js';
 
 export const clearAcceptance = { acceptedAttempt: null, acceptedUntil: null, acceptedChallengeId: null };
 // Caller holds the order row lock. This is the only status-changing write service.
@@ -18,5 +19,6 @@ export async function changeStatus(tx: Prisma.TransactionClient, before: Order, 
   if (to === 'CANCELLED' || to === 'DELIVERED_VERIFIED') {
     await tx.qrToken.updateMany({ where: { orderId: before.id }, data: { revokedAt: new Date() } });
   }
+  await notifyEvent(tx, order, recorded);
   return { order, event: recorded };
 }

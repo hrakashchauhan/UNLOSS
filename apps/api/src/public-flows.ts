@@ -9,6 +9,7 @@ import { lockOrder, reasonFields } from './domain.js';
 import { customerActions, deliveryOutcomes, getQrToken, publicEvent, publicOrder, type QrPurpose } from './qr.js';
 import { changeStatus } from './workflow.js';
 import { completeVerifiedDelivery } from './rewards.js';
+import { notifyEvent } from './notifications.js';
 
 const randomToken = () => randomBytes(32).toString('base64url');
 const codeDigest = (secret: string, id: string, code: string) => createHmac('sha256', secret).update(`otp\0${id}\0${code}`).digest('hex');
@@ -82,6 +83,7 @@ export function registerPublicRoutes(app: Express, prisma: PrismaClient, config:
         if (t.order.acceptedAttempt === t.order.deliveryAttempt && t.order.acceptedUntil && t.order.acceptedUntil > now) throw err('ALREADY_ACCEPTED', 'Customer has already accepted this attempt', 409);
         const order = await tx.order.update({ where: { id: t.orderId }, data: { acceptedAttempt: t.order.deliveryAttempt, acceptedUntil: ch.verificationExpiresAt, acceptedChallengeId: ch.id } });
         const event = await tx.orderEvent.create({ data: { ...data, orderId: t.orderId, fromStatus: order.status, toStatus: order.status, createdAt: new Date() } });
+        await notifyEvent(tx, order, event);
         return { order, event };
       }
       return changeStatus(tx, t.order, v.action === 'REJECT' ? 'CUSTOMER_REJECTED' : 'REDELIVERY_REQUESTED', data);

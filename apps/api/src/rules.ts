@@ -11,7 +11,7 @@ export const transitions:Record<string,string[]>={
 export const isTransitionAllowed=(from:string,to:string)=>Boolean(transitions[from]?.includes(to));
 export const hashToken=(token:string)=>createHash('sha256').update(token).digest('hex');
 export function reportMonthBounds(month:string):[Date,Date]{
-  if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month))throw new Error('month must be YYYY-MM');
+  if(!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(month))throw new Error('month must be YYYY-MM');
   const [year,monthNumber]=month.split('-').map(Number) as [number,number];
   return [new Date(Date.UTC(year,monthNumber-1,1)-330*60_000),new Date(Date.UTC(year,monthNumber,1)-330*60_000)];
 }

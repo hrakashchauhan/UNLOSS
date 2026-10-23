@@ -9,6 +9,7 @@ import { hashToken } from './rules.js';
 import { lockOrder, pagination, paginationSchema, reasonFields, statuses } from './domain.js';
 
 import { changeStatus } from './workflow.js';
+import { notifyEvent } from './notifications.js';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 export const createOrderSchema = z.object({
@@ -29,11 +30,12 @@ export async function createOrder(prisma: PrismaClient, config: Config, sellerId
       addressLine1: v.deliveryAddress.line1, addressLine2: v.deliveryAddress.line2 || null,
       city: v.deliveryAddress.city, state: v.deliveryAddress.state, postalCode: v.deliveryAddress.postalCode,
     } });
-    await tx.orderEvent.create({ data: { orderId: order.id, eventType: 'CREATED', toStatus: 'CREATED', actorType: 'SELLER', actorId: sellerId, source: config.demo ? 'DEMO' : 'MANUAL' } });
+    const event = await tx.orderEvent.create({ data: { orderId: order.id, eventType: 'CREATED', toStatus: 'CREATED', actorType: 'SELLER', actorId: sellerId, source: config.demo ? 'DEMO' : 'MANUAL' } });
     await tx.qrToken.createMany({ data: [
       { orderId: order.id, purpose: 'DELIVERY', tokenHash: hashToken(delivery), expiresAt },
       { orderId: order.id, purpose: 'CUSTOMER', tokenHash: hashToken(customer), expiresAt },
     ] });
+    await notifyEvent(tx, order, event);
     return order;
   });
   return { order, qr: { deliveryUrl: `${config.appOrigin}/delivery/${delivery}`, customerUrl: `${config.appOrigin}/customer/${customer}` } };
