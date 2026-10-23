@@ -7,16 +7,15 @@ import { currentSeller, requireSeller } from './auth.js';
 import { err } from './http.js';
 import { hashToken } from './rules.js';
 
-const encryptToken = (token: string) => Buffer.from(token).toString('base64url');
-const decryptToken = (encrypted: string) => Buffer.from(encrypted, 'base64url').toString('utf8');
+import { sealToken, openToken } from './token-vault.js';
 const createTokenPair = () => ({ delivery: randomBytes(32).toString('base64url'), customer: randomBytes(32).toString('base64url') });
 
-function formatDraftQr(tokens: any[], appOrigin: string) {
+function formatDraftQr(tokens: any[], appOrigin: string, secret: string) {
   const deliveryTok = tokens.find((t: any) => t.purpose === 'DELIVERY' && !t.revokedAt);
   const customerTok = tokens.find((t: any) => t.purpose === 'CUSTOMER' && !t.revokedAt);
   return {
-    deliveryUrl: deliveryTok?.encryptedToken ? `${appOrigin}/draft/delivery/${decryptToken(deliveryTok.encryptedToken)}` : null,
-    customerUrl: customerTok?.encryptedToken ? `${appOrigin}/draft/customer/${decryptToken(customerTok.encryptedToken)}` : null,
+    deliveryUrl: deliveryTok?.encryptedToken ? `${appOrigin}/draft/delivery/${openToken(deliveryTok.encryptedToken, secret)}` : null,
+    customerUrl: customerTok?.encryptedToken ? `${appOrigin}/draft/customer/${openToken(customerTok.encryptedToken, secret)}` : null,
   };
 }
 
@@ -42,7 +41,7 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
     res.json({
       items: items.map(d => ({
         ...d,
-        qr: formatDraftQr(d.tokens, config.appOrigin),
+        qr: formatDraftQr(d.tokens, config.appOrigin, config.sessionSecret),
       })),
     });
   });
@@ -57,8 +56,8 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
       if (!product) product = await tx.product.create({ data: { sellerId, name: v.productName.trim(), defaultQuantity: v.quantity || 1 } });
       const draft = await tx.orderDraft.create({ data: { sellerId, productId: product.id, quantity: v.quantity || 1, status: 'DRAFT' } });
       await tx.draftQrToken.createMany({ data: [
-        { draftId: draft.id, purpose: 'DELIVERY', tokenHash: hashToken(tokens.delivery), encryptedToken: encryptToken(tokens.delivery), expiresAt },
-        { draftId: draft.id, purpose: 'CUSTOMER', tokenHash: hashToken(tokens.customer), encryptedToken: encryptToken(tokens.customer), expiresAt },
+        { draftId: draft.id, purpose: 'DELIVERY', tokenHash: hashToken(tokens.delivery), encryptedToken: sealToken(tokens.delivery, config.sessionSecret), expiresAt },
+        { draftId: draft.id, purpose: 'CUSTOMER', tokenHash: hashToken(tokens.customer), encryptedToken: sealToken(tokens.customer, config.sessionSecret), expiresAt },
       ] });
       return { draft, product, tokens };
     });
@@ -77,7 +76,7 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
     res.json({
       draft: {
         ...draft,
-        qr: formatDraftQr(draft.tokens, config.appOrigin),
+        qr: formatDraftQr(draft.tokens, config.appOrigin, config.sessionSecret),
       },
     });
   });
@@ -91,7 +90,7 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
     res.json({
       draft: {
         ...updated,
-        qr: formatDraftQr(updated?.tokens || [], config.appOrigin),
+        qr: formatDraftQr(updated?.tokens || [], config.appOrigin, config.sessionSecret),
       },
     });
   });
@@ -105,8 +104,8 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
     const dup = await prisma.$transaction(async tx => {
       const draft = await tx.orderDraft.create({ data: { sellerId, productId: source.productId, quantity: source.quantity, recipientName: source.recipientName, recipientPhone: source.recipientPhone, addressLine1: source.addressLine1, addressLine2: source.addressLine2, city: source.city, state: source.state, postalCode: source.postalCode, courier: source.courier, trackingNumber: source.trackingNumber, notes: source.notes, status: 'DRAFT' } });
       await tx.draftQrToken.createMany({ data: [
-        { draftId: draft.id, purpose: 'DELIVERY', tokenHash: hashToken(tokens.delivery), encryptedToken: encryptToken(tokens.delivery), expiresAt },
-        { draftId: draft.id, purpose: 'CUSTOMER', tokenHash: hashToken(tokens.customer), encryptedToken: encryptToken(tokens.customer), expiresAt },
+        { draftId: draft.id, purpose: 'DELIVERY', tokenHash: hashToken(tokens.delivery), encryptedToken: sealToken(tokens.delivery, config.sessionSecret), expiresAt },
+        { draftId: draft.id, purpose: 'CUSTOMER', tokenHash: hashToken(tokens.customer), encryptedToken: sealToken(tokens.customer, config.sessionSecret), expiresAt },
       ] });
       return draft;
     });
@@ -128,8 +127,8 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
     let customerToken: string;
 
     if (activeDelivery && activeCustomer && activeDelivery.encryptedToken && activeCustomer.encryptedToken) {
-      deliveryToken = decryptToken(activeDelivery.encryptedToken);
-      customerToken = decryptToken(activeCustomer.encryptedToken);
+      deliveryToken = openToken(activeDelivery.encryptedToken, config.sessionSecret);
+      customerToken = openToken(activeCustomer.encryptedToken, config.sessionSecret);
     } else {
       const pair = createTokenPair();
       deliveryToken = pair.delivery;
@@ -139,8 +138,8 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
         await tx.draftQrToken.updateMany({ where: { draftId: draft.id }, data: { revokedAt: new Date() } });
         await tx.draftQrToken.createMany({
           data: [
-            { draftId: draft.id, purpose: 'DELIVERY', tokenHash: hashToken(deliveryToken), encryptedToken: encryptToken(deliveryToken), expiresAt },
-            { draftId: draft.id, purpose: 'CUSTOMER', tokenHash: hashToken(customerToken), encryptedToken: encryptToken(customerToken), expiresAt },
+            { draftId: draft.id, purpose: 'DELIVERY', tokenHash: hashToken(deliveryToken), encryptedToken: sealToken(deliveryToken, config.sessionSecret), expiresAt },
+            { draftId: draft.id, purpose: 'CUSTOMER', tokenHash: hashToken(customerToken), encryptedToken: sealToken(customerToken, config.sessionSecret), expiresAt },
           ],
         });
       });
@@ -192,8 +191,8 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
       } });
       await tx.orderEvent.create({ data: { orderId: order.id, eventType: 'CREATED', toStatus: 'CREATED', actorType: 'SELLER', actorId: sellerId, source: config.demo ? 'DEMO' : 'MANUAL' } });
       await tx.qrToken.createMany({ data: [
-        { orderId: order.id, purpose: 'DELIVERY', tokenHash: hashToken(tokens.delivery), encryptedToken: encryptToken(tokens.delivery), expiresAt },
-        { orderId: order.id, purpose: 'CUSTOMER', tokenHash: hashToken(tokens.customer), encryptedToken: encryptToken(tokens.customer), expiresAt },
+        { orderId: order.id, purpose: 'DELIVERY', tokenHash: hashToken(tokens.delivery), encryptedToken: sealToken(tokens.delivery, config.sessionSecret), expiresAt },
+        { orderId: order.id, purpose: 'CUSTOMER', tokenHash: hashToken(tokens.customer), encryptedToken: sealToken(tokens.customer, config.sessionSecret), expiresAt },
       ] });
       await tx.orderDraft.update({ where: { id: draft.id }, data: { status: 'ACTIVATED', activatedOrderId: order.id } });
       return order;
@@ -215,7 +214,7 @@ export function registerProductRoutes(app: Express, prisma: PrismaClient, config
         orderId: dt.draft.activatedOrderId,
         purpose: dt.purpose,
         redirectUrl: activeToken?.encryptedToken
-          ? `/${dt.purpose.toLowerCase()}/${decryptToken(activeToken.encryptedToken)}`
+          ? `/${dt.purpose.toLowerCase()}/${openToken(activeToken.encryptedToken, config.sessionSecret)}`
           : undefined,
       });
     }

@@ -323,6 +323,9 @@ describe('UNLOSS Final MVP End-to-End Directive Workflow', () => {
     expect(payoutRes.status).toBe(200);
     const payoutBatch = await payoutRes.json();
     expect(payoutBatch.batch.status).toBe('SCHEDULED');
-    expect(payoutBatch.note).toContain('Weekly payout scheduled for Monday 10:00 AM IST');
+    expect(payoutBatch.note).toContain('Monday 10:00 AM IST (04:30 UTC)');
+    expect(new Date(payoutBatch.scheduledFor).getUTCDay()).toBe(1);
+    expect(new Date(payoutBatch.scheduledFor).getUTCHours()).toBe(4);
+    expect(new Date(payoutBatch.scheduledFor).getUTCMinutes()).toBe(30);
   });
 });

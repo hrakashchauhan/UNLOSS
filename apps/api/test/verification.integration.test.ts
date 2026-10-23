@@ -103,9 +103,9 @@ it('expires customer acceptance before a late handoff', async () => {
 it('fails honestly when a real OTP provider is absent', async () => {
   const manual = await workflowFixture(false);
   try {
-    const o = await manual.create(); await manual.dispatch(o.order.id);
+    const o = await manual.create();
     const response = await manual.request(`${new URL(o.qr.customerUrl).pathname}/request-otp`, {}, false);
-    expect(response.status).toBe(503); expect((await response.json()).error.code).toBe('OTP_PROVIDER_UNAVAILABLE');
+    expect(response.status).toBe(503); expect((await response.json()).error.code).toBe('PROVIDER_UNAVAILABLE');
     expect(await manual.prisma.otpChallenge.count({ where: { orderId: o.order.id } })).toBe(0);
   } finally { await manual.close(); }
 });

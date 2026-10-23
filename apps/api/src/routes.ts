@@ -1,6 +1,7 @@
 import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import type { Config } from './config.js';
+import { registerParcelWorkspace } from './parcel-workspace.js';
 import { registerOrderRoutes } from './orders.js';
 import { registerPublicRoutes } from './public-flows.js';
 import { registerReportingRoutes } from './reporting.js';
@@ -12,6 +13,7 @@ import { registerAppNotificationRoutes } from './notifications-app.js';
 import { registerLiveEventRoutes } from './live-events.js';
 
 export function registerRoutes(app: Express, prisma: PrismaClient, config: Config) {
+  registerParcelWorkspace(app, prisma, config);
   registerOrderRoutes(app, prisma, config);
   registerPublicRoutes(app, prisma, config);
   registerReportingRoutes(app, prisma, config);

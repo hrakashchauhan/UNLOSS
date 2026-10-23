@@ -15,13 +15,14 @@ describe('routing and common controls', () => {
     expect(screen.getByRole('button', { name: /sign in/i })).toBeTruthy();
   });
 
-  it('shows a public link preview without enabling an unverified delivery action', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ orderReference: 'REF-1', status: 'OUT_FOR_DELIVERY', permittedOutcomes: [] }));
-    vi.stubGlobal('fetch', fetchMock);
-    render(<MemoryRouter initialEntries={['/delivery/public-token']}><App /></MemoryRouter>);
-    expect(await screen.findByText('REF-1', { exact: false })).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Actions temporarily unavailable' }) as HTMLButtonElement).disabled).toBe(true);
-    expect(fetchMock.mock.calls[0][0]).toContain('/delivery/public-token');
+  it('requires an assigned account when opening a parcel QR', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({error:{code:'UNAUTHENTICATED',message:'Sign in required'}},{status:401}));
+    vi.stubGlobal('fetch',fetchMock);
+    render(<MemoryRouter initialEntries={['/delivery/public-token']}><App/></MemoryRouter>);
+    expect(await screen.findByText(/Possessing a QR alone/)).toBeTruthy();
+    expect(screen.getByRole('link',{name:'Sign in to continue'}).getAttribute('href')).toContain('%2Fscan%2Fdelivery%2Fpublic-token');
+    expect(screen.queryByRole('button',{name:/handoff/i})).toBeNull();
+    expect(fetchMock.mock.calls[0][0]).toContain('/workspace/resolve/delivery/public-token');
   });
 
   it('navigates from the persisted dashboard summary to orders', async () => {

@@ -72,25 +72,26 @@ The browser loads Google Identity Services and sends its credential to the backe
 
 Google Audience shows **In production**, with External audience. Homepage and privacy URL are saved; https://unloss-web.vercel.app/privacy.html returns the published notice. Genuine Google sign-in verified end to end on 24 October 2026: the owner account reached the seller dashboard, a full page reload restored the authenticated session, and the live event stream connected. The stalled popup was recovered by restarting sign-in with a live parent tab, reloading the Google chooser and completing account selection. No authentication checks were bypassed.
 
-## 5. SMS deferred by owner; courier and payments incomplete
+## 5. Connected parcels, maps and simulated rewards
 
-The owner chose Google/password login and explicitly deferred SMS. Twilio Verify is the suggested managed OTP provider if SMS is added later. Its trial is limited; real production SMS is paid. Firebase phone verification also requires a billing-enabled plan. No paid plan, SMS provider account, courier API or payment provider was purchased/configured in this deployment.
+The owner deferred SMS and real payouts. Google/password login remains enabled; participant assignment, recipient decisions, courier scans and handoffs require Google-verified accounts. No payment or SMS provider was purchased.
 
-Until real providers and workflow authorization are implemented and tested:
+1. Seller creates a parcel and opens its connected parcel panel. Customer and courier first sign in with Google. Assign their exact account emails; the three participants must be distinct.
+2. Save or reprint delivery/customer QR labels. Tokens are encrypted at rest and repeat printing preserves active links. A QR alone grants no access: the signed-in account must be assigned.
+3. Move through READY_FOR_DISPATCH to OUT_FOR_DELIVERY. Dispatch requires both assignments. Each participant sees related parcels at `/parcels`.
+4. Seller or customer saves a destination pin. Courier explicitly shares a location or starts foreground live tracking. The map displays destination, recipient and courier records, accuracy circles and recorded trail. Scoped events and periodic refresh update the view. Keep the browser open; this is not background navigation.
+5. Courier opens delivery QR and confirms its check. Assigned customer accepts receipt. Within fifteen minutes, courier completes handoff with location recorded within five minutes and reported accuracy of 200 metres or better. Browser GPS is device-reported evidence, not independent proof of physical presence.
+6. Completion atomically records one simulated ₹5 credit. Concurrent/retried handoffs cannot duplicate it. Each credit unlocks exactly seven days after completion.
+7. My parcels & wallet offers **Simulate withdrawal** after unlock. A saved simulation receipt consumes those credits once. No bank information is required and no real money is sent. Real payout integration is a future task.
 
-- Phone OTP sign-in returns an unavailable response outside demo mode.
-- Public QR pages can be previewed; public delivery/customer mutations are disabled outside demo mode.
-- Courier registrations remain pending review and do not imply verified phone ownership.
-- Couriers cannot enumerate all sellers' live orders.
-- Unsigned courier webhook updates and simulated payment checkout/capture are disabled outside demo mode.
-- Internal reward records are not bank payouts.
+Recipients can reject or request redelivery with a reason. Acceptance is tied to the delivery attempt. Events, claims, locations, credits and receipts preserve their database relationships. Locations expire after 30 days. Map tiles contact OpenStreetMap; location sharing has separate controls.
 
-Do not label browser GPS as proof that a courier physically visited an address; browser-reported coordinates are evidence supplied by the device.
+Anonymous mutations, unsigned courier webhooks, simulated payment checkout and phone OTP remain disabled outside demo mode. The authenticated workspace provides the authorized flow. No schema migration is required for this release. Keep SESSION_SECRET stable because new QR encryption uses it.
 
 ## 6. Verification checklist
 
 - [x] Supabase connection and managed schema migration.
-- [x] Backend unit tests: 71 passed.
+- [x] Backend unit tests: 74 passed; database integration tests: 107 passed.
 - [x] Frontend tests: 53 passed.
 - [x] API and frontend TypeScript checks.
 - [x] Vercel production deployment ready; direct `/login` returns HTTP 200.

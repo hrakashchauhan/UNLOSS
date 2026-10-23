@@ -78,20 +78,20 @@ describe('shared persistent rate limits', () => {
     for (let i = 0; i < 6; i++) {
       const token = randomUUID(); track('otp-request-token', token);
       const response = await fetch(`${servers[i % 2]!.url}/api/customer/${token}/request-otp`, { method: 'POST', headers: headers(), body: '{}' });
-      expect(response.status).toBe(i < 5 ? 404 : 429);
+      expect(response.status).toBe(i < 5 ? 503 : 429);
     }
   });
   it('limits OTP verification by token across app instances', async () => {
     const token = randomUUID(); track('otp-verify-token', token);
     for (let i = 0; i < 11; i++) {
       const response = await fetch(`${servers[i % 2]!.url}/api/customer/${token}/verify-otp`, { method: 'POST', headers: headers(), body: JSON.stringify({ challengeId: 'synthetic', code: '000000' }) });
-      expect(response.status).toBe(i < 10 ? 404 : 429);
+      expect(response.status).toBe(i < 10 ? 503 : 429);
     }
   });
   it('enforces the separate OTP-request token budget before the IP budget is exhausted', async () => {
     const token = randomUUID(); track('otp-request-token', token);
     const first = await fetch(`${servers[0]!.url}/api/customer/${token}/request-otp`, { method: 'POST', headers: headers(), body: '{}' });
-    expect(first.status).toBe(404);
+    expect(first.status).toBe(503);
     const key = store('otp-request-token').key(token);
     const row = await prisma.rateLimitBucket.findUniqueOrThrow({ where: { key } });
     expect(row.resetAt.getTime() - Date.now()).toBeGreaterThan(3_500_000);
@@ -105,7 +105,7 @@ describe('shared persistent rate limits', () => {
     for (let i = 0; i < 31; i++) {
       const token = randomUUID(); track('otp-verify-token', token);
       const response = await fetch(`${servers[i % 2]!.url}/api/customer/${token}/verify-otp`, { method: 'POST', headers: headers(), body: '{}' });
-      expect(response.status).toBe(i < 30 ? 404 : 429);
+      expect(response.status).toBe(i < 30 ? 503 : 429);
     }
   });
 });

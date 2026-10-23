@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Config } from './config.js';
 import { currentSeller, currentUser, requireAnySession, requireRole, requireSeller } from './auth.js';
 import { err } from './http.js';
+import { nextPayoutMonday } from './parcel-workspace.js';
 import { lockOrder } from './domain.js';
 
 export function registerFundingRoutes(app: Express, prisma: PrismaClient, config: Config) {
@@ -55,11 +56,13 @@ export function registerFundingRoutes(app: Express, prisma: PrismaClient, config
     const orderId = String(req.params.id);
     const rewardPaise = 500, feeAllowancePaise = 100, totalPaise = rewardPaise + feeAllowancePaise;
     const result = await prisma.$transaction(async tx => {
-      await lockOrder(tx, orderId, sellerId);
+      const order = await lockOrder(tx, orderId, sellerId);
+      if (['CANCELLED','DELIVERED_VERIFIED'].includes(order.status)) throw err('CONFLICT', 'This parcel no longer accepts a reward reservation', 409);
+      const existing = await tx.budgetReservation.findUnique({ where: { orderId } });
+      if (existing) return existing;
+      await tx.$queryRaw`SELECT id FROM "FundingAccount" WHERE "sellerId" = ${sellerId} FOR UPDATE`;
       const account = await tx.fundingAccount.findUnique({ where: { sellerId } });
       if (!account || account.availablePaise < totalPaise) throw err('INSUFFICIENT_FUNDS', 'Add reward budget to cover ₹6 (₹5 + fee allowance) before activation', 409);
-      const existing = await tx.budgetReservation.findUnique({ where: { orderId } });
-      if (existing && existing.status === 'RESERVED') return existing;
       await tx.fundingAccount.update({ where: { sellerId }, data: { availablePaise: { decrement: totalPaise }, reservedPaise: { increment: totalPaise } } });
       return tx.budgetReservation.create({ data: { sellerId, orderId, rewardPaise, feeAllowancePaise, totalPaise, status: 'RESERVED' } });
     });
@@ -87,8 +90,8 @@ export function registerFundingRoutes(app: Express, prisma: PrismaClient, config
     const now = new Date();
     const weekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - ((now.getUTCDay() + 6) % 7)));
     const weekEnd = new Date(weekStart.getTime() + 7 * 864e5);
-    const scheduledFor = new Date(weekStart.getTime() + 3 * 864e5 + 10 * 3600_000);
+    const scheduledFor = nextPayoutMonday(now);
     const batch = await prisma.payoutBatch.upsert({ where: { weekStart }, update: {}, create: { weekStart, weekEnd, scheduledFor, status: 'SCHEDULED' } });
-    res.json({ batch, scheduledFor: scheduledFor.toISOString(), note: 'Weekly payout scheduled for Monday 10:00 AM IST (03:30 UTC) for eligible earnings through preceding Sunday.' });
+    res.json({ batch, scheduledFor: scheduledFor.toISOString(), note: 'Payout preparation only. Monday 10:00 AM IST (04:30 UTC). No bank transfer is executed without a configured verified payment provider.' });
   });
 }

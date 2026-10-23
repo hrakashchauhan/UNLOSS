@@ -10,6 +10,8 @@ import { normalizeOrder } from '../../api';
 
 const raw: RawOrder = { id: 'order-1', sellerId: 'seller-1', sellerReference: 'TEST-ORDER', status: 'CREATED', customerName: 'Test Recipient', customerPhone: '+919000000000', addressLine1: 'Test address', addressLine2: null, city: 'Test city', state: 'Test state', postalCode: '000000', createdAt: '2026-10-01T00:00:00Z', updatedAt: '2026-10-01T00:00:00Z' };
 const created: OrderCreated = { order: normalizeOrder(raw), qr: { deliveryUrl: 'https://unloss.example/delivery/test-delivery-token', customerUrl: 'https://unloss.example/customer/test-customer-token' } };
+vi.mock('../parcels/ParcelWorkspace', () => ({ ParcelPanel: () => null }));
+
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 it('rejects whitespace-only order data and malformed phone numbers', () => {

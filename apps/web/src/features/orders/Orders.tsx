@@ -6,6 +6,7 @@ import { statuses, reasons, sellerSteps } from '../../domain';
 import { BackLink, Empty, ErrorBox, PageHead, Pagination, Status, errText, formatDate, pretty } from '../../ui/common';
 import { ResourceState } from '../../ui/ResourceState';
 import { useResource } from '../../ui/useResource';
+import { ParcelPanel } from '../parcels/ParcelWorkspace';
 import { QrSheet } from './QrSheet';
 import { DualQrDraftManager } from './DualQrDraftManager';
 
@@ -122,15 +123,15 @@ function OrderDetail({ id }: { id: string }) {
       {(sellerSteps[order.status] || []).length > 0 ? <form className="transition-box form-stack no-print" onSubmit={transition}><h3>Record next step</h3><fieldset disabled={busy}><label>Next status<select required value={to} onChange={event => setTo(event.target.value as OrderStatus)}><option value="">Choose next step</option>{sellerSteps[order.status]?.map(status => <option key={status} value={status}>{pretty(status)}</option>)}</select></label>
         <label>Reason<select value={reason} onChange={event => setReason(event.target.value as ReasonCode)} required={['RETURN_INITIATED', 'REDELIVERY_REQUESTED', 'CANCELLED'].includes(to)}><option value="">Select a reason</option>{reasons.map(reason => <option key={reason} value={reason}>{pretty(reason)}</option>)}</select></label>
         <label>Note (optional)<textarea value={note} maxLength={1000} rows={3} onChange={event => setNote(event.target.value)} /></label></fieldset><button className="button primary" disabled={busy || !to}>{busy ? 'Saving…' : 'Record change'}</button><small className="field-help">The server checks permissions and current status. Customer acceptance and verified handoff use the separate QR workflows.</small></form> : <p className="notice">This order has no further seller status actions.</p>}
-    </section><section className="panel"><h2>Recipient & destination</h2><dl><dt>Name</dt><dd>{order.customer.name}</dd><dt>Phone</dt><dd>{order.customer.phone}</dd><dt>Delivery address</dt><dd>{order.deliveryAddress.line1}<br />{order.deliveryAddress.line2 && <>{order.deliveryAddress.line2}<br /></>}{order.deliveryAddress.city}, {order.deliveryAddress.state} {order.deliveryAddress.postalCode}</dd></dl><p className="field-help">QR links are issued once at creation. This details printout does not regenerate them. Use your saved QR sheet.</p></section></div>
+    </section><section className="panel"><h2>Recipient & destination</h2><dl><dt>Name</dt><dd>{order.customer.name}</dd><dt>Phone</dt><dd>{order.customer.phone}</dd><dt>Delivery address</dt><dd>{order.deliveryAddress.line1}<br />{order.deliveryAddress.line2 && <>{order.deliveryAddress.line2}<br /></>}{order.deliveryAddress.city}, {order.deliveryAddress.state} {order.deliveryAddress.postalCode}</dd></dl><p className="field-help">Retrieve and reprint saved labels in the parcel workspace below.</p></section></div>
 
     {resource.data?.locations && resource.data.locations.length > 0 && (
       <section className="panel" style={{ marginTop: '16px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
         <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            📍 Physical GPS Scan Evidence ({resource.data.locations.length} records)
+            📍 Saved location evidence ({resource.data.locations.length} records)
           </h2>
-          <span style={{ fontSize: '11px', color: '#64748b' }}>Hardware-verified coordinates at scan time</span>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Device-reported coordinates and accuracy</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
           {resource.data.locations.map((loc: any) => (
@@ -162,6 +163,7 @@ function OrderDetail({ id }: { id: string }) {
       </section>
     )}
 
+    <ParcelPanel id={id} />
     <Timeline events={resource.data?.events || []} />
   </>}</>;
 }

@@ -8,6 +8,7 @@ import {PartnerDemo, DemoHome} from './features/demo/PartnerDemo';
 import {SettingsPage} from './features/settings/Settings';
 import {PublicFlow} from './features/public/PublicFlow';
 import {DraftPublicView} from './features/public/DraftPublicView';
+import {ParcelWorkspace, ParcelQrEntry} from './features/parcels/ParcelWorkspace';
 import {DeliveryDashboard} from './features/delivery/DeliveryDashboard';
 import {CustomerDashboard} from './features/customer/CustomerDashboard';
 import {AdminDashboard} from './features/admin/AdminDashboard';
@@ -19,6 +20,7 @@ export function App(){
  return <Routes>
   <Route path="/" element={<Navigate to="/dashboard" replace/>}/>
   <Route path="/delivery/:token" element={<PublicRoute kind="delivery"/>}/>
+  <Route path="/scan/:kind/:token" element={<ScanRoute/>}/>
   <Route path="/customer/:token" element={<PublicRoute kind="customer"/>}/>
   <Route path="/draft/delivery/:token" element={<DraftPublicView kind="delivery"/>}/>
   <Route path="/draft/customer/:token" element={<DraftPublicView kind="customer"/>}/>
@@ -28,13 +30,15 @@ export function App(){
   <Route path="/demo/customer" element={<PublicFlow key="demo-customer" kind="customer" token="" demo/>}/></>}
   <Route element={<AuthProvider/>}>
    <Route path="/login" element={<LoginRoute/>}/>
+   <Route path="/parcels" element={<ParcelWorkspace/>}/>
+   <Route path="/parcels/:id" element={<ParcelWorkspace/>}/>
    {/* Delivery Person Dashboard */}
    <Route element={<RequireRole allowedRoles={['DELIVERY']}/>}>
-    <Route path="/delivery-portal" element={<DeliveryDashboard/>}/>
+    <Route path="/delivery-portal" element={<ParcelWorkspace/>}/>
    </Route>
    {/* Customer Dashboard */}
    <Route element={<RequireRole allowedRoles={['CUSTOMER']}/>}>
-    <Route path="/customer-portal" element={<CustomerDashboard/>}/>
+    <Route path="/customer-portal" element={<ParcelWorkspace/>}/>
    </Route>
    {/* Administrator Dashboard */}
    <Route element={<RequireRole allowedRoles={['ADMIN']}/>}>
@@ -58,7 +62,9 @@ export function App(){
  </Routes>;
 }
 
-function PublicRoute({kind}:{kind:'delivery'|'customer'}){const {token=''}=useParams();return <PublicFlow key={kind+token} kind={kind} token={token}/>}
+function PublicRoute({kind}:{kind:'delivery'|'customer'}){const {token=''}=useParams();return <ParcelQrEntry key={kind+token} kind={kind} token={token}/>}
+
+function ScanRoute(){const {kind,token=''}=useParams();return <ParcelQrEntry kind={kind==='delivery'?'delivery':'customer'} token={token}/>;}
 
 function SellerApp(){
  const location=useLocation();
@@ -95,7 +101,7 @@ function SellerApp(){
    <aside ref={navigation} className={`sidebar ${mobileNav?'open':''}`} aria-label="Workspace navigation"><div className="brand"><div className="brand-mark">u</div><span>unloss<span className="brand-dot">.</span></span><button ref={closeButton} className="icon-btn mobile-close" aria-label="Close navigation" onClick={()=>{setMobileNav(false);menuButton.current?.focus()}}><X size={18}/></button></div><div className="workspace-label">SELLER WORKSPACE</div><nav aria-label="Main navigation">{nav.map(([id,label,Icon])=><Link key={id} to={`/${id}`} onClick={()=>setMobileNav(false)} aria-current={section===id?'page':undefined} className={`nav-link ${section===id?'active':''}`}><Icon size={18}/><span>{label}</span></Link>)}</nav><div className="sidebar-bottom"><div className="user-card"><div className="avatar">{seller.name?.slice(0,1)||'S'}</div><div className="user-info"><b>{seller.name}</b><small>{seller.email}</small></div><button className="icon-btn" aria-label={signOutBusy?"Signing out":"Sign out"} title="Sign out" disabled={signOutBusy} onClick={handleSignOut}><LogOut size={16}/></button></div></div></aside>
   {mobileNav&&<button aria-label="Close navigation" className="nav-scrim" onClick={()=>{setMobileNav(false);menuButton.current?.focus()}}/>}
    <main className="main-area" id="main-content" tabIndex={-1} inert={mobileNav}><header className="topbar"><button ref={menuButton} className="icon-btn mobile-menu" aria-label="Open navigation" aria-expanded={mobileNav} onClick={()=>setMobileNav(true)}><Menu size={20}/></button><div className="crumb">Workspace <ChevronRight size={14}/><b>{pretty(section)}</b></div>
-   <div className="top-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><LiveIndicator />
+   <div className="top-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Link className="button" to="/parcels">My parcels & wallet</Link><LiveIndicator />
      {mode==='demo' && (
        <div style={{ display: 'flex', gap: '4px' }}>
          <button className="button" style={{ minHeight: '30px', fontSize: '.78rem', padding: '2px 8px' }} title="Switch to Delivery Person" onClick={() => switchRole('DELIVERY')}>

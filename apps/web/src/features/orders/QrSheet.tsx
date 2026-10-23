@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import type { OrderCreated } from '../../api';
@@ -14,6 +14,12 @@ export function safeQrUrl(value: string, purpose: 'delivery' | 'customer') {
 
 export function TokenCard({ purpose, url }: { purpose: 'delivery' | 'customer'; url: string }) {
   const [feedback, setFeedback] = useState('');
+  const canvas = useRef<HTMLDivElement>(null);
+  function download() {
+    const svg = canvas.current?.querySelector('svg'); if (!svg) return;
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], {type:'image/svg+xml'}));
+    const anchor = document.createElement('a'); anchor.href=url; anchor.download=`unloss-${purpose}-qr.svg`; anchor.click(); URL.revokeObjectURL(url);
+  }
   const absolute = safeQrUrl(url, purpose);
   async function copy() {
     try {
@@ -33,12 +39,12 @@ export function TokenCard({ purpose, url }: { purpose: 'delivery' | 'customer'; 
       <h2 className="screen-heading-only">{label}</h2>
       {absolute ? (
         <>
-          <div className="clean-qr-canvas">
+          <div className="clean-qr-canvas" ref={canvas}>
             <QRCodeSVG
               value={absolute}
               size={220}
               level="M"
-              marginSize={2}
+              marginSize={4}
               title={`${label} purpose-specific order link`}
               role="img"
             />
@@ -56,6 +62,7 @@ export function TokenCard({ purpose, url }: { purpose: 'delivery' | 'customer'; 
               <button className="button subtle" onClick={copy}>
                 Copy {purpose} link
               </button>
+              <button className="button subtle" onClick={download}>Download SVG</button>
               <span role="status" style={{ fontSize: '11px', color: '#047857' }}>
                 {feedback}
               </span>

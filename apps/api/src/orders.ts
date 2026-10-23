@@ -10,6 +10,7 @@ import { lockOrder, pagination, paginationSchema, reasonFields, statuses } from 
 
 import { changeStatus } from './workflow.js';
 import { notifyEvent } from './notifications.js';
+import { sealToken } from './token-vault.js';
 import { sellerOrder } from './order-response.js';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -33,8 +34,8 @@ export async function createOrder(prisma: PrismaClient, config: Config, sellerId
     } });
     const event = await tx.orderEvent.create({ data: { orderId: order.id, eventType: 'CREATED', toStatus: 'CREATED', actorType: 'SELLER', actorId: sellerId, source: config.demo ? 'DEMO' : 'MANUAL' } });
     await tx.qrToken.createMany({ data: [
-      { orderId: order.id, purpose: 'DELIVERY', tokenHash: hashToken(delivery), expiresAt },
-      { orderId: order.id, purpose: 'CUSTOMER', tokenHash: hashToken(customer), expiresAt },
+      { orderId: order.id, purpose: 'DELIVERY', tokenHash: hashToken(delivery), encryptedToken: sealToken(delivery, config.sessionSecret), expiresAt },
+      { orderId: order.id, purpose: 'CUSTOMER', tokenHash: hashToken(customer), encryptedToken: sealToken(customer, config.sessionSecret), expiresAt },
     ] });
     await notifyEvent(tx, order, event);
     return order;
@@ -85,6 +86,10 @@ export function registerOrderRoutes(app: Express, prisma: PrismaClient, config: 
     const sellerId = currentSeller(res).id;
     const result = await prisma.$transaction(async tx => {
       const before = await lockOrder(tx, String(req.params.id), sellerId);
+      if (!config.demo && v.toStatus === 'OUT_FOR_DELIVERY') {
+        const assigned = await tx.parcelClaim.findFirst({ where: { orderId: before.id, status: 'APPROVED' } });
+        if (!before.customerUserId || !assigned) throw err('ASSIGNMENT_REQUIRED', 'Assign the recipient and courier in the parcel workspace before dispatch', 409);
+      }
       if (!sellerTargets.has(v.toStatus)) throw err('FORBIDDEN', 'This outcome requires the verified delivery/customer workflow', 403);
       return changeStatus(tx, before, v.toStatus, { eventType: v.toStatus, actorType: 'SELLER', actorId: sellerId, reasonCode: v.reasonCode, note: v.note, source: config.demo ? 'DEMO' : 'MANUAL' });
     });

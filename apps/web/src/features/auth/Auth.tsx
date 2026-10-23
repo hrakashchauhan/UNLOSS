@@ -228,6 +228,7 @@ export function LoginRoute() {
   if (phase === 'checking') return <main className="splash" role="status">Checking your session…</main>;
   if (phase === 'error') return <SessionStatus />;
   if (phase === 'authenticated') {
+    if (target.startsWith('/scan/') || target.startsWith('/parcels')) return <Navigate replace to={target} />;
     // If returning to a specific role, route intelligently
     if (user?.roles?.includes('DELIVERY') && !seller) return <Navigate replace to="/delivery-portal" />;
     if (user?.roles?.includes('CUSTOMER') && !seller && !user.roles.includes('DELIVERY')) return <Navigate replace to="/customer-portal" />;
@@ -269,6 +270,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
   const [otpMessage, setOtpMessage] = useState('');
 
   function routeUser(role: string) {
+    if (returnTo.startsWith('/scan/') || returnTo.startsWith('/parcels')) { navigate(returnTo, { replace: true }); return; }
     if (role === 'DELIVERY') navigate('/delivery-portal', { replace: true });
     else if (role === 'CUSTOMER') navigate('/customer-portal', { replace: true });
     else navigate(returnTo || '/dashboard', { replace: true });

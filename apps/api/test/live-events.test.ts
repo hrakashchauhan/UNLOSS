@@ -5,6 +5,14 @@ import { broadcastLiveEvent } from '../src/live-events.js';
 import { createLogger } from '../src/logger.js';
 import { listen, testConfig } from './helpers.js';
 
+vi.mock('../src/auth.js', async importOriginal => {
+  const original = await importOriginal<typeof import('../src/auth.js')>();
+  return { ...original, requireAnySession: () => (req: any, res: any, next: any) => {
+    if (req.get('x-test-session') === 'seller-1') res.locals.seller = { id: 'seller-1' };
+    next();
+  } };
+});
+
 describe('Server-Sent Events (SSE) and live event stream', () => {
   let prisma: PrismaClient;
   let server: Awaited<ReturnType<typeof listen>>;
@@ -17,6 +25,7 @@ describe('Server-Sent Events (SSE) and live event stream', () => {
     vi.spyOn(prisma.seller, 'findUnique').mockResolvedValue(null);
     vi.spyOn(prisma.session, 'findFirst').mockResolvedValue(null);
     vi.spyOn(prisma.session, 'findUnique').mockResolvedValue(null);
+    vi.spyOn(prisma.order, 'findFirst').mockResolvedValue({ id: 'order-1' } as any);
     vi.spyOn(prisma.orderEvent, 'findMany').mockResolvedValue([]);
     vi.spyOn(prisma.orderEvent, 'findUnique').mockResolvedValue(null);
     vi.spyOn(prisma.rateLimitBucket, 'findFirst').mockResolvedValue(null);
@@ -29,21 +38,26 @@ describe('Server-Sent Events (SSE) and live event stream', () => {
     vi.restoreAllMocks();
   });
 
+  it('rejects unsigned event polling and streaming', async () => {
+    for (const path of ['poll','live']) expect((await fetch(`${server.url}/api/events/${path}`)).status).toBe(401);
+  });
+
   it('exposes /api/events/poll returning recent order events and timestamp', async () => {
     const res = await fetch(`${server.url}/api/events/poll`, {
-      headers: { Origin: config.appOrigin },
+      headers: { 'x-test-session': 'seller-1', Origin: config.appOrigin },
     });
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toHaveProperty('items');
     expect(json).toHaveProperty('timestamp');
     expect(Array.isArray(json.items)).toBe(true);
+    expect(prisma.orderEvent.findMany).toHaveBeenCalledWith(expect.objectContaining({where: expect.objectContaining({order: expect.objectContaining({OR: expect.arrayContaining([{sellerId:'seller-1'}])})})}));
   });
 
   it('exposes /api/events/live with text/event-stream headers and sends initial connected event', async () => {
     const controller = new AbortController();
     const res = await fetch(`${server.url}/api/events/live`, {
-      headers: { Origin: config.appOrigin, Accept: 'text/event-stream' },
+      headers: { 'x-test-session': 'seller-1', Origin: config.appOrigin, Accept: 'text/event-stream' },
       signal: controller.signal,
     });
 
@@ -66,7 +80,7 @@ describe('Server-Sent Events (SSE) and live event stream', () => {
   it('broadcasts live events to active SSE subscribers', async () => {
     const controller = new AbortController();
     const res = await fetch(`${server.url}/api/events/live`, {
-      headers: { Origin: config.appOrigin, Accept: 'text/event-stream' },
+      headers: { 'x-test-session': 'seller-1', Origin: config.appOrigin, Accept: 'text/event-stream' },
       signal: controller.signal,
     });
 

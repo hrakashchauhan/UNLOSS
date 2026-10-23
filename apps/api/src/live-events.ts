@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import type { Express, Request, Response } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import type { Config } from './config.js';
+import { err } from './http.js';
 import { requireAnySession } from './auth.js';
 
 export interface LiveEvent {
@@ -37,7 +38,16 @@ export function broadcastLiveEvent(event: Omit<LiveEvent, 'createdAt'> & { creat
 }
 
 export function registerLiveEventRoutes(app: Express, prisma: PrismaClient, config: Config) {
-  const auth = requireAnySession(prisma, config);
+  const authenticate = requireAnySession(prisma, config);
+  const auth: import('express').RequestHandler[] = [authenticate, (_req, res, next) => {
+    if (!res.locals.seller && !res.locals.authUser) return next(err('UNAUTHENTICATED', 'Sign in required', 401));
+    next();
+  }];
+  const scope = (res: Response) => ({ OR: [
+    ...(res.locals.seller ? [{ sellerId: res.locals.seller.id }] : []),
+    { customerUserId: res.locals.authUser?.id || '' },
+    { claims: { some: { deliveryUserId: res.locals.authUser?.id || '', status: 'APPROVED' } } },
+  ] });
 
   // Server-Sent Events (SSE) Stream
   app.get('/api/events/live', auth, async (req: Request, res: Response) => {
@@ -75,7 +85,7 @@ export function registerLiveEventRoutes(app: Express, prisma: PrismaClient, conf
         const missedEvents = await prisma.orderEvent.findMany({
           where: {
             createdAt: { gt: sinceTime },
-            ...(sellerId && !isAdmin ? { order: { sellerId } } : {}),
+            order: scope(res),
           },
           include: { order: true },
           orderBy: { createdAt: 'asc' },
@@ -101,28 +111,16 @@ export function registerLiveEventRoutes(app: Express, prisma: PrismaClient, conf
 
     // Heartbeat ping every 15 seconds to keep connection alive
     const pingTimer = setInterval(() => {
+      if (!req.session.sessionExpiresAt || req.session.sessionExpiresAt <= Date.now()) { res.end(); return; }
       res.write(': ping\n\n');
     }, 15_000);
 
     // Event listener
     const onEvent = (event: LiveEvent) => {
-      // Permission filtering
-      if (isAdmin) {
-        sendSse(event.id, event.eventType, event);
-        return;
-      }
-      if (sellerId && event.sellerId && event.sellerId === sellerId) {
-        sendSse(event.id, event.eventType, event);
-        return;
-      }
-      if (userId && event.data?.userId && event.data.userId === userId) {
-        sendSse(event.id, event.eventType, event);
-        return;
-      }
-      // Public / universal events (e.g. order status changes for claimed orders)
-      if (!event.sellerId || event.sellerId === sellerId) {
-        sendSse(event.id, event.eventType, event);
-      }
+      if (!event.orderId) return;
+      void prisma.order.findFirst({ where: { id: event.orderId, ...scope(res) }, select: { id: true } }).then(order => {
+        if (order && !res.writableEnded) sendSse(event.id, event.eventType, { id: event.id, orderId: event.orderId, eventType: event.eventType, status: event.status, createdAt: event.createdAt });
+      }).catch(() => {});
     };
 
     eventHub.on('live-event', onEvent);
@@ -142,11 +140,12 @@ export function registerLiveEventRoutes(app: Express, prisma: PrismaClient, conf
 
     const sinceParam = req.query.since as string | undefined;
     const since = sinceParam ? new Date(sinceParam) : new Date(Date.now() - 30_000);
+    if (Number.isNaN(since.getTime())) throw err('VALIDATION_ERROR', 'Invalid timestamp', 400);
 
     const events = await prisma.orderEvent.findMany({
       where: {
         createdAt: { gt: since },
-        ...(sellerId && !isAdmin ? { order: { sellerId } } : {}),
+        order: scope(res),
       },
       include: { order: true },
       orderBy: { createdAt: 'desc' },

@@ -1,0 +1,71 @@
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { api } from '../../api';
+import { ErrorBox, errText } from '../../ui/common';
+import { ParcelMap, type LocationPoint } from '../../ui/ParcelMap';
+import { TokenCard } from '../orders/QrSheet';
+import { useAuth } from '../auth/Auth';
+import { LiveIndicator } from '../../ui/LiveIndicator';
+import { Wallet } from './Wallet';
+
+type Parcel = { id: string; sellerReference: string | null; itemName?: string; status: string; customerName: string; addressLine1: string; city: string; state: string; postalCode: string; deliveryAttempt: number; acceptedAttempt: number | null; acceptedUntil: string | null; customerUser: { name: string; email: string } | null; claims: { deliveryUser: { name: string; email: string } }[]; locations: LocationPoint[]; events: { id: string; eventType: string; createdAt: string; note?: string }[]; earning: { amountPaise: number; status: string; availableAt: string } | null };
+type Detail = { order: Parcel; access: { seller: boolean; customer: boolean; delivery: boolean }; paymentsEnabled: boolean };
+export function ParcelWorkspace() {
+  const { id } = useParams();
+  const { user, seller, signOut, phase } = useAuth();
+  const [items, setItems] = useState<Parcel[]>([]), [error, setError] = useState('');
+  const refresh = useCallback(async () => { try { setItems((await api<{items: Parcel[]}>('/workspace/parcels')).items); setError(''); } catch(e) { setError(errText(e)); } }, []);
+  useEffect(() => { if (phase === 'authenticated') void refresh(); }, [phase, refresh]);
+  if (phase === 'checking') return <main className="recovery-screen">Checking your session…</main>;
+  if (phase !== 'authenticated') return <main className="recovery-screen"><h1>Sign in to your parcel workspace</h1><Link className="button primary" to={`/login?returnTo=${encodeURIComponent(window.location.pathname)}`}>Continue with your account</Link></main>;
+  return <main className="page-wrap" style={{ maxWidth: 1200, margin: 'auto' }}><header className="page-heading"><div><div className="eyebrow">UNLOSS · CONNECTED DELIVERY</div><h1>{id ? 'Parcel workspace' : 'My parcels'}</h1><p>{user?.name || seller?.name}</p></div><div className="form-actions"><Link className="button" to="/parcels">My parcels</Link>{seller && <Link className="button" to="/dashboard">Seller dashboard</Link>}<button className="button" onClick={() => void signOut()}>Sign out</button></div></header>
+    {id ? <ParcelPanel key={id} id={id}/> : <><LiveIndicator onLiveEvent={() => void refresh()}/>{error && <ErrorBox message={error}/>}<button className="button" onClick={() => void refresh()}>Refresh parcels</button><div className="form-grid" style={{marginTop:20}}>{items.map(p => <Link className="panel" key={p.id} to={`/parcels/${p.id}`}><h2>{p.sellerReference || p.itemName || p.id.slice(-8)}</h2><p>{p.status.replaceAll('_',' ')}</p></Link>)}</div>{!items.length && <p>No assigned parcels yet. Give the seller the email address you used for Google sign-in.</p>}<Wallet/></>}
+  </main>;
+}
+export function ParcelPanel({ id }: { id: string }) {
+  const [data, setData] = useState<Detail | null>(null), [error, setError] = useState(''), [busy,setBusy] = useState(false), [message,setMessage] = useState('');
+  const [qr,setQr] = useState<{deliveryUrl:string;customerUrl:string}|null>(null);
+  const [sharing,setSharing] = useState(false);
+  const [pin,setPin] = useState<{latitude:number;longitude:number}|null>(null);
+  const pickPin = useCallback((latitude:number,longitude:number)=>setPin({latitude,longitude}),[]);
+  const watch = useRef<number | null>(null), lastSent = useRef(0), sending = useRef(false);
+  const refresh = useCallback(async () => { try { setData(await api<Detail>(`/workspace/parcels/${id}`)); setError(''); } catch(e){setError(errText(e));} },[id]);
+  useEffect(() => { void refresh(); const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void refresh(); },15000); return () => clearInterval(timer); },[refresh]);
+  function stopSharing() { if(watch.current !== null) navigator.geolocation.clearWatch(watch.current); watch.current=null; setSharing(false); }
+  useEffect(() => () => { if(watch.current !== null) navigator.geolocation.clearWatch(watch.current); },[]);
+  useEffect(() => { if(data && data.order.status !== 'OUT_FOR_DELIVERY') stopSharing(); },[data?.order.status]);
+  async function action(path:string, body:unknown) { setBusy(true); setError(''); try { await api(path,{method:'POST',body:JSON.stringify(body)});setMessage('Saved. Everyone assigned to this parcel can see the update.'); await refresh(); } catch(e){setError(errText(e));}finally{setBusy(false);} }
+  async function participants(e:FormEvent<HTMLFormElement>) {e.preventDefault();const f=new FormData(e.currentTarget);await action(`/orders/${id}/participants`,{customerEmail:f.get('customerEmail'),courierEmail:f.get('courierEmail')});}
+  function share(kind:string,continuous=false) {
+    if(!navigator.geolocation){setError('Location is not supported in this browser.');return;}
+    const success=async (position:GeolocationPosition) => {
+      if(sending.current || (continuous && Date.now()-lastSent.current<15000))return;
+      sending.current=true;lastSent.current=Date.now();
+      try {await api(`/workspace/parcels/${id}/location`,{method:'POST',body:JSON.stringify({kind,latitude:position.coords.latitude,longitude:position.coords.longitude,accuracyMeters:position.coords.accuracy})});setMessage(`Location shared at ${new Date().toLocaleTimeString()} (±${Math.round(position.coords.accuracy)} m)`);await refresh();}catch(e){setError(errText(e));}finally{sending.current=false;}
+    };
+    const fail=(e:GeolocationPositionError)=>{setError(`Location unavailable: ${e.message}. Check your browser location permission and GPS.`);stopSharing();};
+    if(continuous){lastSent.current=0;setSharing(true);watch.current=navigator.geolocation.watchPosition(success,fail,{enableHighAccuracy:true,timeout:20000,maximumAge:0});}
+    else navigator.geolocation.getCurrentPosition(success,fail,{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+  }
+  async function labels(){setBusy(true);try{setQr((await api<{qr:{deliveryUrl:string;customerUrl:string}}>(`/orders/${id}/qr`,{method:'POST',body:'{}'})).qr);}catch(e){setError(errText(e));}finally{setBusy(false);}}
+  if(!data)return <section className="panel">{error?<ErrorBox message={error}/>:<p>Loading parcel…</p>}</section>;
+  const {order:o,access:a}=data;
+  const accepted=o.acceptedAttempt===o.deliveryAttempt && !!o.acceptedUntil && Date.parse(o.acceptedUntil)>Date.now();
+  return <div className="parcel-workspace"><LiveIndicator onLiveEvent={() => void refresh()}/>{error&&<ErrorBox message={error}/>}<p role="status">{message}</p><section className="panel"><div className="page-heading"><h2>{o.sellerReference||o.id.slice(-8)}</h2><b>{o.status.replaceAll('_',' ')}</b></div><p>{o.customerName} · {o.addressLine1}, {o.city}, {o.state} {o.postalCode}</p><p>Recipient: {o.customerUser?.email||'Not assigned'}<br/>Courier: {o.claims[0]?.deliveryUser.email||'Not assigned'}</p><p>Attempt {o.deliveryAttempt} · Recipient acceptance: {accepted?'Confirmed for this attempt':'Waiting'}</p>
+    {a.seller&&<><p><Link to={`/orders/${id}`}>Open seller status controls</Link></p><details><summary>Assign recipient and courier</summary><p>Each person must sign in with Google first. Assignment grants access to this parcel only. Assign before dispatch.</p><form className="form-stack" onSubmit={participants}><label>Recipient Google email<input type="email" name="customerEmail" required/></label><label>Courier Google email<input type="email" name="courierEmail" required/></label><button className="button primary" disabled={busy}>Save assignments</button></form></details><button className="button" disabled={busy} onClick={() => void labels()}>Retrieve saved QR labels</button></>}
+    {qr&&<div className="qr-sheet"><div className="token-grid"><TokenCard purpose="delivery" url={qr.deliveryUrl}/><TokenCard purpose="customer" url={qr.customerUrl}/></div><button className="button no-print" onClick={()=>window.print()}>Print / save PDF labels</button></div>}
+    {a.customer&&o.status==='OUT_FOR_DELIVERY'&&<section><h3>Confirm this delivery</h3><p>Accept only when you are receiving this parcel. Your signed-in account and this delivery attempt are recorded. Acceptance expires after fifteen minutes.</p><button className="button primary" disabled={busy||accepted} onClick={()=>void action(`/workspace/parcels/${id}/decision`,{action:'ACCEPT'})}>{accepted?'Receipt accepted':'I received the parcel — accept'}</button><button className="button" disabled={busy} onClick={()=>void action(`/workspace/parcels/${id}/decision`,{action:'REJECT',reasonCode:'CUSTOMER_REJECTED'})}>Reject parcel</button><button className="button" disabled={busy} onClick={()=>void action(`/workspace/parcels/${id}/decision`,{action:'REQUEST_REDELIVERY',reasonCode:'CUSTOMER_REQUESTED_REDELIVERY'})}>Request redelivery</button></section>}
+    {a.delivery&&o.status==='OUT_FOR_DELIVERY'&&<section><h3>Courier handoff</h3><p>Open and confirm the printed delivery QR first. Share a location captured within five minutes with accuracy of 200 m or better. The recipient must confirm receipt before completion.</p><button className="button primary" disabled={busy||!accepted} onClick={()=>void action(`/workspace/parcels/${id}/handoff`,{})}>Confirm handoff and credit ₹5 (simulated)</button></section>}
+    {o.earning&&<p className="notice">Simulated reward credit: ₹{(o.earning.amountPaise/100).toFixed(2)} · {o.earning.status.replaceAll('_',' ')} · Seven-day hold ends {new Date(o.earning.availableAt).toLocaleString()}. A credit is not a completed bank transfer.</p>}
+  </section><section className="panel"><h2>Location sharing</h2><p>Share only while handling this delivery. Assigned seller, courier and recipient can view the recorded locations. Live tracking runs only while this page is open and the device allows location updates.</p><div className="form-actions">
+    {(a.seller||a.customer)&&!['CANCELLED','DELIVERED_VERIFIED'].includes(o.status)&&<button className="button" onClick={()=>share('DESTINATION')}>Set destination to my current location</button>}
+    {a.customer&&o.status==='OUT_FOR_DELIVERY'&&<button className="button" onClick={()=>share('CUSTOMER_LOCATION')}>Share recipient location once</button>}
+    {a.delivery&&o.status==='OUT_FOR_DELIVERY'&&<><button className="button" onClick={()=>share('COURIER_LOCATION')}>Share courier location once</button><button className="button" onClick={()=>sharing?stopSharing():share('COURIER_LOCATION',true)}>{sharing?'Stop live tracking':'Start live tracking'}</button></>}
+  </div>{sharing&&<p role="status">Live location sharing is on. Updates are sent at most once every fifteen seconds.</p>}</section><ParcelMap points={o.locations} onPick={(a.seller||a.customer)&&!['CANCELLED','DELIVERED_VERIFIED'].includes(o.status)?pickPin:undefined}/>{pin&&<section className="panel"><p>Selected destination pin: {pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}. This is a map selection, not a GPS observation.</p><button className="button primary" disabled={busy} onClick={()=>void action(`/workspace/parcels/${id}/location`,{...pin,kind:'DESTINATION',source:'MAP_PIN',accuracyMeters:1})}>Save destination pin</button></section>}<section className="panel"><h2>Saved activity</h2>{o.events.map(e=><p key={e.id}><b>{e.eventType.replaceAll('_',' ')}</b> · {new Date(e.createdAt).toLocaleString()}{e.note&&<> · {e.note}</>}</p>)}</section></div>;
+}
+export function ParcelQrEntry({kind,token}:{kind:'delivery'|'customer';token:string}) {
+  const [error,setError]=useState(''),[orderId,setOrderId]=useState(''),[scanSaved,setScanSaved]=useState(false);
+  async function confirmScan(){try{await api(`/workspace/scan/${kind}/${encodeURIComponent(token)}`,{method:'POST',body:'{}'});setScanSaved(true);setError('');}catch(e){setError(errText(e));}}
+  useEffect(()=>{let active=true;api<{orderId:string}>(`/workspace/resolve/${kind}/${encodeURIComponent(token)}`).then(d=>{if(active)setOrderId(d.orderId);}).catch(e=>{if(active)setError(errText(e));});return()=>{active=false;};},[kind,token]);
+  return <main className="page-wrap" style={{maxWidth:1100,margin:'auto'}}><h1>UNLOSS · {kind==='customer'?'Recipient':'Courier'} parcel access</h1>{orderId?<><p>Confirm that you opened this parcel label. This records the QR check against your account and the current delivery attempt.</p><button className="button primary" disabled={scanSaved} onClick={()=>void confirmScan()}>{scanSaved?'QR check recorded':'Confirm parcel QR check'}</button>{error&&<ErrorBox message={error}/>}<Link className="button" to={`/parcels/${orderId}`}>Open full parcel workspace</Link><ParcelPanel id={orderId}/></>:<><p>{error||'Checking parcel access…'}</p><p>Sign in with the Google account assigned by the seller. Possessing a QR alone does not grant access.</p><Link className="button primary" to={`/login?returnTo=${encodeURIComponent(`/scan/${kind}/${token}`)}`}>Sign in to continue</Link></>}</main>;
+}

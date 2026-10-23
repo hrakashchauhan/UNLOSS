@@ -20,6 +20,13 @@ export async function changeStatus(tx: Prisma.TransactionClient, before: Order, 
   if (to === 'CANCELLED' || to === 'DELIVERED_VERIFIED') {
     await tx.qrToken.updateMany({ where: { orderId: before.id }, data: { revokedAt: new Date() } });
   }
+  if (to === 'CANCELLED' || to === 'RETURNED_TO_SELLER') {
+    const reserved = await tx.budgetReservation.findUnique({ where: { orderId: order.id } });
+    if (reserved?.status === 'RESERVED') {
+      await tx.budgetReservation.update({ where: { id: reserved.id }, data: { status: 'RELEASED', releasedAt: new Date() } });
+      await tx.fundingAccount.update({ where: { sellerId: order.sellerId }, data: { reservedPaise: { decrement: reserved.totalPaise }, availablePaise: { increment: reserved.totalPaise } } });
+    }
+  }
   await notifyEvent(tx, order, recorded);
   broadcastLiveEvent({
     id: recorded.id,
