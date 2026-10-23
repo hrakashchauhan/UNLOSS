@@ -29,6 +29,14 @@ model Session {
   @@index([expiresAt])
 }
 
+model RateLimitBucket {
+  key     String   @id
+  hits    Int
+  resetAt DateTime @db.Timestamptz(3)
+
+  @@index([resetAt])
+}
+
 model Order {
   id              String         @id @default(cuid())
   sellerId        String

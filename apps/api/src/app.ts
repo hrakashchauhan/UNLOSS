@@ -8,6 +8,9 @@ import { checkDatabase } from './database.js';
 import { errorHandler, err, notFound, requestContext } from './http.js';
 import type { Logger } from './logger.js';
 import { registerRoutes } from './routes.js';
+import { PrismaSessionStore, SESSION_COOKIE, SESSION_TTL_MS, sessionCookieOptions } from './sessions.js';
+import { registerAuthRoutes } from './auth.js';
+import { createRateLimits } from './rate-limits.js';
 
 export interface AppDependencies {
   config: Config;
@@ -41,10 +44,15 @@ export function createApp({ config, prisma, logger, isShuttingDown = () => false
     next();
   });
   app.use(express.json({ limit: '32kb' }));
+  const store = new PrismaSessionStore(prisma, config);
   app.use(session({
-    name: 'unloss.sid', secret: config.sessionSecret, resave: false, saveUninitialized: false,
-    cookie: { httpOnly: true, sameSite: 'lax', secure: config.nodeEnv === 'production', maxAge: 7 * 864e5 },
+    name: SESSION_COOKIE, secret: config.sessionSecret, store, resave: false, saveUninitialized: false,
+    cookie: { ...sessionCookieOptions(config), maxAge: SESSION_TTL_MS },
   }));
+  const limits = createRateLimits(prisma, config, logger);
+  registerAuthRoutes(app, prisma, config, store, limits);
+  app.post('/api/customer/:token/request-otp', limits.otpRequestIp, limits.otpRequestToken);
+  app.post('/api/customer/:token/verify-otp', limits.otpVerifyIp, limits.otpVerifyToken);
   registerRoutes(app, prisma, config);
   app.use(notFound);
   app.use(errorHandler(logger));

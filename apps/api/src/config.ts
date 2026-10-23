@@ -54,11 +54,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
 export type Config = ReturnType<typeof loadConfig>;
 
 export class ProductionNotReadyError extends Error {
-  constructor() { super('Production serving is disabled pending authentication and workflow security verification'); }
+  constructor() { super('Production serving is disabled pending workflow security and deployment verification'); }
 }
 
 export function assertRuntimeSupported(config: Config) {
-  // Remove only after Phase 2 and the audited workflow security defects are verified.
+  // Authentication is implemented; remove only after remaining workflow/deployment checks pass.
   if (config.nodeEnv === 'production') {
     throw new ProductionNotReadyError();
   }

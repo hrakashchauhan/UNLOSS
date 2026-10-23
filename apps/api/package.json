@@ -12,15 +12,15 @@
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --exclude test/database.integration.test.ts",
-    "test:integration": "vitest run test/database.integration.test.ts",
-    "test:watch": "vitest --exclude test/database.integration.test.ts",
+    "test": "vitest run --exclude \"**/*.integration.test.ts\"",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:watch": "vitest --exclude \"**/*.integration.test.ts\"",
     "prisma:generate": "prisma generate",
     "db:validate": "prisma validate",
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "lint": "eslint src test prisma/seed.ts"
+    "lint": "eslint src test prisma/seed.ts vitest.integration.config.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

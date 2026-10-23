@@ -4,5 +4,5 @@
     "strict": true, "esModuleInterop": true, "skipLibCheck": true, "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true, "types": ["node"]
   },
-  "include": ["src/**/*.ts", "prisma/seed.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "prisma/seed.ts", "test/**/*.ts", "vitest.integration.config.ts"]
 }

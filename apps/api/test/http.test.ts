@@ -14,8 +14,10 @@ describe('HTTP foundation', () => {
 
   beforeEach(async () => {
     prisma = new PrismaClient();
-    vi.spyOn(prisma, '$queryRaw').mockResolvedValue([{ '?column?': 1 }]);
+    vi.spyOn(prisma, '$queryRaw').mockResolvedValue([{ hits: 1, resetAt: new Date(Date.now() + 60_000) }]);
     vi.spyOn(prisma.seller, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.session, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.rateLimitBucket, 'findFirst').mockResolvedValue(null);
     logs = []; shuttingDown = false;
     server = await listen(createApp({ config, prisma, logger: createLogger(line => logs.push(line)), isShuttingDown: () => shuttingDown }));
   });

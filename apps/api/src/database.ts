@@ -13,5 +13,9 @@ export function createDatabase(config: Config) {
 export async function checkDatabase(prisma: PrismaClient) {
   await prisma.$queryRaw`SELECT 1`;
   // Reachability alone is insufficient: a database without migrations is not ready.
-  await prisma.seller.findFirst({ select: { id: true } });
+  await Promise.all([
+    prisma.seller.findFirst({ select: { id: true } }),
+    prisma.session.findFirst({ select: { sid: true } }),
+    prisma.rateLimitBucket.findFirst({ select: { key: true } }),
+  ]);
 }

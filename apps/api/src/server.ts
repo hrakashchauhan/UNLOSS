@@ -6,6 +6,7 @@ import { createApp } from './app.js';
 import { assertRuntimeSupported, ConfigurationError, ProductionNotReadyError, loadConfig, type Config } from './config.js';
 import { checkDatabase, createDatabase } from './database.js';
 import { createLogger, type Logger } from './logger.js';
+import { startSecurityMaintenance } from './maintenance.js';
 
 export async function startServer(config: Config, logger: Logger, prisma: PrismaClient = createDatabase(config)) {
   let server: Server | undefined;
@@ -30,6 +31,7 @@ export async function startServer(config: Config, logger: Logger, prisma: Prisma
     throw error;
   }
   const listener = server;
+  const stopMaintenance = startSecurityMaintenance(prisma, logger);
   return {
     server: listener,
     shutdown(): Promise<void> {
@@ -44,7 +46,7 @@ export async function startServer(config: Config, logger: Logger, prisma: Prisma
               if (error) reject(error); else resolve();
             });
           });
-        } finally { await prisma.$disconnect(); }
+        } finally { await stopMaintenance(); await prisma.$disconnect(); }
         logger.info('server.stopped');
       })();
       return shutdownPromise;
