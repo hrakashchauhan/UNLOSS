@@ -11,7 +11,7 @@ import { listen, testConfig } from './helpers.js';
 describe('authentication failure handling', () => {
   const config = testConfig();
   const password = randomBytes(18).toString('base64url');
-  const seller = { id: 'synthetic-seller', email: 'synthetic@unloss.local', name: 'Synthetic Seller', passwordHash: bcrypt.hashSync(password, 12), createdAt: new Date() };
+  const seller = { id: 'synthetic-seller', email: 'synthetic@unloss.local', name: 'Synthetic Seller', passwordHash: bcrypt.hashSync(password, 12), userId: null, createdAt: new Date() };
   const headers = { Origin: config.appOrigin, 'Content-Type': 'application/json' };
   let prisma: PrismaClient;
   let server: Awaited<ReturnType<typeof listen>>;
@@ -21,11 +21,11 @@ describe('authentication failure handling', () => {
     prisma = new PrismaClient();
     vi.spyOn(prisma, '$queryRaw').mockResolvedValue([{ hits: 1, resetAt: new Date(Date.now() + 60_000) }]);
     vi.spyOn(prisma.seller, 'findUnique').mockResolvedValue(seller);
-    vi.spyOn(prisma.session, 'create').mockResolvedValue({ sid: 'hashed-id', sellerId: seller.id, data: {}, expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
+    vi.spyOn(prisma.session, 'create').mockResolvedValue({ sid: 'hashed-id', sellerId: seller.id, userId: null, data: {}, expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
     vi.spyOn(prisma.session, 'count').mockResolvedValue(1);
     vi.spyOn(prisma.session, 'deleteMany').mockResolvedValue({ count: 1 });
     vi.spyOn(prisma.session, 'findUnique').mockResolvedValue({
-      sid: 'hashed-id', sellerId: seller.id, data: { credentialVersion: hashToken(seller.passwordHash) }, expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+      sid: 'hashed-id', sellerId: seller.id, userId: null, data: { credentialVersion: hashToken(seller.passwordHash) }, expiresAt: new Date(Date.now() + SESSION_TTL_MS),
     });
     logs = [];
     server = await listen(createApp({ config, prisma, logger: createLogger(line => logs.push(line)) }));
@@ -96,6 +96,6 @@ describe('authentication failure handling', () => {
     expect(logs.join('')).not.toContain('private-rate-error');
   });
   it('retains secure, host-only cookie attributes for the future production deployment', () => {
-    expect(sessionCookieOptions({ ...config, nodeEnv: 'production' })).toEqual({ path: '/', httpOnly: true, sameSite: 'lax', secure: true });
+    expect(sessionCookieOptions({ ...config, nodeEnv: 'production' })).toEqual({ path: '/', httpOnly: true, sameSite: 'lax', secure: true, hostOnly: true });
   });
 });

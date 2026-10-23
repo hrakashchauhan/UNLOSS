@@ -7,7 +7,7 @@ import { hashToken } from './rules.js';
 export const SESSION_COOKIE = 'unloss.sid';
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export const sessionCookieOptions = (config: Config) => ({
-  path: '/', httpOnly: true, sameSite: 'lax' as const, secure: config.nodeEnv === 'production',
+  path: '/', httpOnly: true, sameSite: 'lax' as const, secure: config.nodeEnv === 'production', hostOnly: true,
 });
 const unavailable = () => err('SESSION_UNAVAILABLE', 'Session service is unavailable', 503);
 type Callback = (error?: Error) => void;
@@ -17,12 +17,12 @@ export class PrismaSessionStore extends session.Store {
   constructor(private readonly prisma: PrismaClient, private readonly config: Config) { super(); }
 
   async issue(sid: string, data: session.SessionData) {
-    if (!data.sellerId || !data.credentialVersion || !data.sessionExpiresAt || data.sessionExpiresAt <= Date.now()) {
+    if ((!data.sellerId && !data.userId) || !data.credentialVersion || !data.sessionExpiresAt || data.sessionExpiresAt <= Date.now()) {
       throw err('UNAUTHENTICATED', 'Sign in required', 401);
     }
     try {
       await this.prisma.session.create({ data: {
-        sid: hashToken(sid), sellerId: data.sellerId, expiresAt: new Date(data.sessionExpiresAt),
+        sid: hashToken(sid), sellerId: data.sellerId || null, userId: data.userId || null, expiresAt: new Date(data.sessionExpiresAt),
         data: { credentialVersion: data.credentialVersion },
       } });
     } catch { throw unavailable(); }
@@ -44,14 +44,14 @@ export class PrismaSessionStore extends session.Store {
     const cookie = new session.Cookie();
     Object.assign(cookie, sessionCookieOptions(this.config), { expires: row.expiresAt });
     cookie.originalMaxAge = row.expiresAt.getTime() - Date.now();
-    return { sellerId: row.sellerId, sessionExpiresAt: row.expiresAt.getTime(), credentialVersion: data.credentialVersion, cookie };
+    return { sellerId: row.sellerId || undefined, userId: (row as any).userId || undefined, sessionExpiresAt: row.expiresAt.getTime(), credentialVersion: data.credentialVersion, cookie } as session.SessionData;
   }
 
   override set(sid: string, data: session.SessionData, callback: Callback = () => {}): void {
-    if (!data.sellerId || !data.sessionExpiresAt) { callback(err('UNAUTHENTICATED', 'Sign in required', 401)); return; }
+    if ((!data.sellerId && !data.userId) || !data.sessionExpiresAt) { callback(err('UNAUTHENTICATED', 'Sign in required', 401)); return; }
     // No upsert: a request loaded before logout/expiry must never recreate that session.
     void this.prisma.session.count({ where: {
-      sid: hashToken(sid), sellerId: data.sellerId,
+      sid: hashToken(sid), ...(data.sellerId ? { sellerId: data.sellerId } : { userId: data.userId }),
       expiresAt: { equals: new Date(data.sessionExpiresAt), gt: new Date() },
     } }).then(count => callback(count === 1 ? undefined : err('UNAUTHENTICATED', 'Sign in required', 401)), () => callback(unavailable()));
   }

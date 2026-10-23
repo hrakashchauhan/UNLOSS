@@ -31,6 +31,59 @@ export async function seedDemoSeller(prisma: PrismaClient, env: NodeJS.ProcessEn
   return prisma.seller.upsert({ where: { email }, update: {}, create: { email, passwordHash, name: 'Demo Seller' } });
 }
 
+export async function seedDemoRoles(prisma: PrismaClient, _env: NodeJS.ProcessEnv, seller: { id: string; email: string; name: string; passwordHash: string }) {
+  let sellerUser = await prisma.user.findFirst({ where: { email: seller.email } });
+  if (!sellerUser) {
+    sellerUser = await prisma.user.create({
+      data: {
+        name: seller.name, email: seller.email, passwordHash: seller.passwordHash, status: 'ACTIVE',
+        memberships: { create: { role: 'SELLER', status: 'ACTIVE' } },
+      },
+    });
+  }
+  await prisma.seller.update({ where: { id: seller.id }, data: { userId: sellerUser.id } });
+
+  const deliveryEmail = 'delivery@unloss.local';
+  let deliveryUser = await prisma.user.findFirst({ where: { email: deliveryEmail } });
+  if (!deliveryUser) {
+    deliveryUser = await prisma.user.create({
+      data: {
+        name: 'Demo Delivery Partner', email: deliveryEmail, phone: '+919876543211', passwordHash: seller.passwordHash, status: 'ACTIVE',
+        memberships: { create: { role: 'DELIVERY', status: 'ACTIVE' } },
+        deliveryProfile: {
+          create: { employer: 'Swift Express Logistics', deliveryReference: 'SWIFT-DEL-042', reviewStatus: 'APPROVED', phoneVerifiedAt: new Date() },
+        },
+      },
+    });
+  }
+
+  const customerEmail = 'customer@unloss.local';
+  let customerUser = await prisma.user.findFirst({ where: { email: customerEmail } });
+  if (!customerUser) {
+    customerUser = await prisma.user.create({
+      data: {
+        name: 'Demo Customer', email: customerEmail, phone: '+919876543212', passwordHash: seller.passwordHash, status: 'ACTIVE',
+        memberships: { create: { role: 'CUSTOMER', status: 'ACTIVE' } },
+        customerProfile: {
+          create: { defaultName: 'Demo Customer', addressLine1: '402 Greenfield Residency', addressLine2: 'Koramangala 4th Block', city: 'Bengaluru', state: 'Karnataka', postalCode: '560034' },
+        },
+      },
+    });
+  }
+
+  const adminEmail = 'admin@unloss.local';
+  let adminUser = await prisma.user.findFirst({ where: { email: adminEmail } });
+  if (!adminUser) {
+    adminUser = await prisma.user.create({
+      data: {
+        name: 'Demo System Admin', email: adminEmail, phone: '+919876543213', passwordHash: seller.passwordHash, status: 'ACTIVE',
+        memberships: { create: { role: 'ADMIN', status: 'ACTIVE' } },
+        adminPermissions: { create: { permission: 'ALL' } },
+      },
+    });
+  }
+}
+
 export async function seedDemoOrders(prisma: PrismaClient, config: Config, sellerId: string) {
   if (!config.demo || config.nodeEnv === 'production') throw new Error('Sample orders require local demo mode');
   await prisma.$transaction(async tx => {
@@ -65,6 +118,7 @@ async function main() {
     const samples = z.enum(['true','false']).default('false').parse(process.env.SEED_SAMPLE_ORDERS);
     prisma = createDatabase(config);
     const seller = await seedDemoSeller(prisma, process.env);
+    await seedDemoRoles(prisma, process.env, seller);
     if (samples === 'true') await seedDemoOrders(prisma, config, seller.id);
     logger.info('demo.seed_completed', { mode: 'demo' });
   } catch {
