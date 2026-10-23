@@ -148,17 +148,229 @@ dd { margin: 2px 0 12px; overflow-wrap: anywhere; }
   .pagination { gap: 12px; flex-wrap: wrap; }
 }
 
+.qr-sheet-wrapper {
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.qr-sheet-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.qr-sheet-header {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+
+.clean-qr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.clean-qr-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 28px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 2px 6px -1px rgba(0,0,0,0.04);
+  position: relative;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.clean-qr-card:hover {
+  box-shadow: 0 6px 16px -2px rgba(0,0,0,0.06);
+}
+
+.clean-qr-badge {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 6px 18px;
+  border-radius: 20px;
+  margin-bottom: 18px;
+}
+
+.delivery-badge {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.customer-badge {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.clean-qr-canvas {
+  background: #ffffff;
+  padding: 16px;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.clean-qr-actions {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+
+.active-toggle {
+  background: #0f172a !important;
+  color: #ffffff !important;
+  border-color: #0f172a !important;
+}
+
+.print-label-only {
+  display: none;
+}
+
+/* =========================================================================
+   STRICT PRINT-ONLY STYLES:
+   "The QR sheet needs to print the QR only, no text, nothing with it but it
+   needs to be easily visible whether it is for the delivery guy or customer.
+   It needs to be written there and nothing else."
+   ========================================================================= */
+.qr-print-only-sheet {
+  display: none;
+}
+
 @media print {
-  .skip-link, .pagination, .token-card button { display: none !important; }
-  .token-card a { color: #202122; }
-  .no-print { display: none !important; }
-  .token-grid { grid-template-columns: 1fr 1fr; }
-  .token-card { break-inside: avoid; }
-  .qr-sheet { max-width: none; }
-  .qr-sheet svg { width: 52mm; height: 52mm; print-color-adjust: exact; }
-  .table-scroll { overflow: visible; }
-  .qr-sheet .token-card a { font-size: 9pt; }
-  .demo-banner::after { content: ' · SYNTHETIC DEMONSTRATION'; }
+  @page {
+    margin: 10mm;
+    size: auto;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide absolutely everything else */
+  .app-shell,
+  .sidebar,
+  .topbar,
+  .footer,
+  .no-print,
+  header,
+  nav,
+  .skip-link,
+  .pagination,
+  .notice,
+  .field-help,
+  .login-note,
+  .demo-banner,
+  .eyebrow,
+  .crumb {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  .qr-sheet-wrapper {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  /* Display ONLY the printable tickets */
+  .qr-print-only-sheet {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+    width: 100% !important;
+    min-height: 85vh !important;
+    padding: 20mm 10mm !important;
+    gap: 30mm !important;
+    page-break-after: avoid !important;
+    box-sizing: border-box !important;
+  }
+
+  .qr-print-ticket {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    text-align: center !important;
+    padding: 24px 20px !important;
+    border: 3px dashed #000000 !important;
+    border-radius: 12px !important;
+    page-break-inside: avoid !important;
+    width: 90mm !important;
+    box-sizing: border-box !important;
+  }
+
+  .qr-print-label {
+    font-size: 32pt !important;
+    font-weight: 900 !important;
+    letter-spacing: 4px !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif !important;
+    color: #000000 !important;
+    margin-bottom: 24px !important;
+    text-transform: uppercase !important;
+  }
+
+  .token-card .screen-heading-only {
+    display: none !important;
+  }
+
+  .token-card .print-label-only {
+    display: block !important;
+    font-size: 32pt !important;
+    font-weight: 900 !important;
+    letter-spacing: 4px !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif !important;
+    color: #000000 !important;
+    margin-bottom: 24px !important;
+    text-transform: uppercase !important;
+    text-align: center !important;
+  }
+
+  .token-grid {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+    width: 100% !important;
+    gap: 30mm !important;
+  }
+
+  .token-card {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    border: 3px dashed #000000 !important;
+    padding: 24px 20px !important;
+    border-radius: 12px !important;
+    page-break-inside: avoid !important;
+    width: 90mm !important;
+  }
+
+  .clean-qr-canvas svg {
+    width: 70mm !important;
+    height: 70mm !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }

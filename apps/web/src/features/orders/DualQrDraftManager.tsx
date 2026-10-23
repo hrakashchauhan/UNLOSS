@@ -369,8 +369,34 @@ export function DualQrDraftManager({ onOrderActivated }: { onOrderActivated?: (o
             </div>
           </div>
 
+          {/* Clean print-only sheet: QR only + DELIVERY / CUSTOMER labels only */}
+          <div className="qr-print-only-sheet">
+            <div className="qr-print-ticket">
+              <div className="qr-print-label">DELIVERY</div>
+              <div className="qr-print-code">
+                <QRCodeSVG
+                  value={activeDraft.qr.deliveryUrl}
+                  size={280}
+                  level="M"
+                  marginSize={1}
+                />
+              </div>
+            </div>
+            <div className="qr-print-ticket">
+              <div className="qr-print-label">CUSTOMER</div>
+              <div className="qr-print-code">
+                <QRCodeSVG
+                  value={activeDraft.qr.customerUrl}
+                  size={280}
+                  level="M"
+                  marginSize={1}
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Dual QR Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+          <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '24px' }}>
             {/* Delivery QR */}
             <div style={{ background: '#ffffff', border: '1px solid var(--line)', borderRadius: '8px', padding: '20px', textAlign: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.03)' }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--primary)', fontWeight: 700, fontSize: '.9rem', marginBottom: '8px' }}>

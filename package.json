@@ -4,9 +4,13 @@
   "scripts": {
     "dev:api": "npm --prefix apps/api run dev",
     "dev:web": "npm --prefix apps/web run dev",
+    "build": "npm run build:api && npm run build:web",
     "build:api": "npm --prefix apps/api run build",
     "build:web": "npm --prefix apps/web run build",
+    "test": "npm run test:api && npm run test:web",
     "test:api": "npm --prefix apps/api test",
+    "test:web": "npm --prefix apps/web test",
+    "typecheck": "npm run typecheck:api && npm run typecheck:web",
     "typecheck:api": "npm --prefix apps/api run typecheck",
     "typecheck:web": "npm --prefix apps/web run typecheck"
   }

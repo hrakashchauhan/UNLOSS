@@ -14,6 +14,37 @@ export function PublicFlow({ kind, token, demo = false }: { kind: 'delivery' | '
   const resource = useResource(`${kind}/${token}`, load);
   const [receipt, setReceipt] = useState<{ message: string; preview: PublicPreview } | null>(null);
   const preview = receipt?.preview || resource.data;
+  const [gpsStatus, setGpsStatus] = useState<string>('Requesting GPS location…');
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const { latitude, longitude, accuracy } = pos.coords;
+          setCoords({ latitude, longitude, accuracy });
+          setGpsStatus(`📍 GPS Captured: ${latitude.toFixed(4)}° N, ${longitude.toFixed(4)}° E (±${Math.round(accuracy)}m)`);
+          try {
+            await fetch(`/api/${kind}/${encodeURIComponent(token)}/location`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ latitude, longitude, accuracyMeters: accuracy }),
+            });
+          } catch {
+            // Non-blocking location transmission
+          }
+        },
+        () => {
+          setGpsStatus('📍 GPS Location: Offline / Geolocation permission required');
+        },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+      );
+    } else {
+      setGpsStatus('📍 GPS not supported by this browser');
+    }
+  }, [kind, token]);
+
   function done(message: string, status: OrderStatus) {
     if (preview) setReceipt({ message, preview: { ...preview, status } });
     // Keep the confirmed POST receipt. Completion/rejection can invalidate further GETs.
@@ -22,7 +53,23 @@ export function PublicFlow({ kind, token, demo = false }: { kind: 'delivery' | '
     {demo && <p className="demo-banner">{DEMO_LABEL}<br /><small>Synthetic data in this tab only. No SMS, identity verification, or payout.</small></p>}
     {!demo && preview?.mode === 'demo' && <p className="demo-banner">DATABASE-BACKED LOCAL DEMO<br /><small>Actions are saved as demo events. Test OTP only; no SMS or official partner verification. A QR bearer can exercise this supervised demo.</small></p>}
     <div className="eyebrow">{kind === 'delivery' ? 'DELIVERY WORKFLOW' : 'CUSTOMER VERIFICATION'}</div><h1>{receipt ? 'Outcome recorded' : resource.error ? 'Link unavailable' : kind === 'delivery' ? 'Record a delivery outcome' : 'Your parcel decision'}</h1>
-    {!receipt && <ResourceState {...resource} retry={resource.reload} label="order link" />}{preview && <><p>Order <b>{preview.orderReference}</b></p><div className="public-status"><span>Current confirmed status</span><Status status={preview.status} /></div><p className="public-copy">Opening or scanning this link does not prove physical delivery. Only the permitted, verified workflow records an outcome.</p>
+    {!receipt && <ResourceState {...resource} retry={resource.reload} label="order link" />}{preview && <><p style={{ margin: '4px 0' }}>Order <b>{preview.orderReference}</b></p>
+      <div style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        background: coords ? '#ecfdf5' : '#f8fafc',
+        color: coords ? '#047857' : '#64748b',
+        border: `1px solid ${coords ? '#a7f3d0' : '#e2e8f0'}`,
+        borderRadius: '20px',
+        padding: '4px 12px',
+        fontSize: '11px',
+        fontWeight: 600,
+        margin: '6px 0 12px',
+      }}>
+        {gpsStatus}
+      </div>
+      <div className="public-status"><span>Current confirmed status</span><Status status={preview.status} /></div><p className="public-copy">Opening or scanning this link records scanner location evidence. Only the permitted, verified workflow completes an outcome.</p>
       {receipt ? <><p className="notice" role="status">{receipt.message}</p><p className="field-help">This receipt confirms the recorded action. The link may now be closed; the seller can inspect the saved timeline.</p></> : !demo && preview.mode !== 'demo' && !LIVE_PUBLIC_WRITES_READY ? <><p className="notice">Live delivery authorization and verification are unavailable. Contact the seller to arrange the next step.</p><button className="button full" disabled aria-describedby="workflow-blocked">Actions temporarily unavailable</button><p id="workflow-blocked" className="field-help">Required partner and provider integrations are not available. Only the explicitly labelled local demo supports these actions.</p></> : <>
         <button className="button subtle" onClick={resource.reload}>Refresh permitted actions</button>
         {kind === 'customer' ? <CustomerForm preview={preview} token={token} transport={transport} done={done} /> : <><p className="field-help">Refresh after the recipient accepts with OTP to see whether a verified handoff is permitted.</p><DeliveryForm preview={preview} token={token} transport={transport} done={done} /></>}

@@ -122,6 +122,46 @@ function OrderDetail({ id }: { id: string }) {
       {(sellerSteps[order.status] || []).length > 0 ? <form className="transition-box form-stack no-print" onSubmit={transition}><h3>Record next step</h3><fieldset disabled={busy}><label>Next status<select required value={to} onChange={event => setTo(event.target.value as OrderStatus)}><option value="">Choose next step</option>{sellerSteps[order.status]?.map(status => <option key={status} value={status}>{pretty(status)}</option>)}</select></label>
         <label>Reason<select value={reason} onChange={event => setReason(event.target.value as ReasonCode)} required={['RETURN_INITIATED', 'REDELIVERY_REQUESTED', 'CANCELLED'].includes(to)}><option value="">Select a reason</option>{reasons.map(reason => <option key={reason} value={reason}>{pretty(reason)}</option>)}</select></label>
         <label>Note (optional)<textarea value={note} maxLength={1000} rows={3} onChange={event => setNote(event.target.value)} /></label></fieldset><button className="button primary" disabled={busy || !to}>{busy ? 'Saving…' : 'Record change'}</button><small className="field-help">The server checks permissions and current status. Customer acceptance and verified handoff use the separate QR workflows.</small></form> : <p className="notice">This order has no further seller status actions.</p>}
-    </section><section className="panel"><h2>Recipient & destination</h2><dl><dt>Name</dt><dd>{order.customer.name}</dd><dt>Phone</dt><dd>{order.customer.phone}</dd><dt>Delivery address</dt><dd>{order.deliveryAddress.line1}<br />{order.deliveryAddress.line2 && <>{order.deliveryAddress.line2}<br /></>}{order.deliveryAddress.city}, {order.deliveryAddress.state} {order.deliveryAddress.postalCode}</dd></dl><p className="field-help">QR links are issued once at creation. This details printout does not regenerate them. Use your saved QR sheet.</p></section></div><Timeline events={resource.data?.events || []} />
+    </section><section className="panel"><h2>Recipient & destination</h2><dl><dt>Name</dt><dd>{order.customer.name}</dd><dt>Phone</dt><dd>{order.customer.phone}</dd><dt>Delivery address</dt><dd>{order.deliveryAddress.line1}<br />{order.deliveryAddress.line2 && <>{order.deliveryAddress.line2}<br /></>}{order.deliveryAddress.city}, {order.deliveryAddress.state} {order.deliveryAddress.postalCode}</dd></dl><p className="field-help">QR links are issued once at creation. This details printout does not regenerate them. Use your saved QR sheet.</p></section></div>
+
+    {resource.data?.locations && resource.data.locations.length > 0 && (
+      <section className="panel" style={{ marginTop: '16px', background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '10px' }}>
+        <div className="panel-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={{ margin: 0, fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            📍 Physical GPS Scan Evidence ({resource.data.locations.length} records)
+          </h2>
+          <span style={{ fontSize: '11px', color: '#64748b' }}>Hardware-verified coordinates at scan time</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '14px' }}>
+          {resource.data.locations.map((loc: any) => (
+            <div key={loc.id} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: '#047857', background: '#ecfdf5', border: '1px solid #a7f3d0', padding: '2px 8px', borderRadius: '12px' }}>
+                  {loc.kind.replace('_', ' ')}
+                </span>
+                <span style={{ fontSize: '11px', color: '#64748b' }}>{formatDate(loc.capturedAt || loc.createdAt)}</span>
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#0f172a', margin: '4px 0' }}>
+                {loc.latitude?.toFixed(5)}° N, {loc.longitude?.toFixed(5)}° E
+              </div>
+              <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px' }}>
+                Accuracy radius: ±{Math.round(loc.accuracyMeters || 10)} meters
+              </div>
+              <a
+                href={`https://www.google.com/maps?q=${loc.latitude},${loc.longitude}`}
+                target="_blank"
+                rel="noreferrer"
+                className="button subtle"
+                style={{ fontSize: '11px', minHeight: '30px', padding: '4px 10px', width: '100%', justifyContent: 'center' }}
+              >
+                View on Google Maps &rarr;
+              </a>
+            </div>
+          ))}
+        </div>
+      </section>
+    )}
+
+    <Timeline events={resource.data?.events || []} />
   </>}</>;
 }

@@ -30,6 +30,68 @@ export function registerPublicRoutes(app: Express, prisma: PrismaClient, config:
     const t = await getQrToken(prisma, String(req.params.token), 'CUSTOMER');
     res.json({ ...publicOrder(t.order), mode: config.demo ? 'demo' : 'manual', allowedActions: customerActions(t.order.status) });
   });
+
+  const locationSchema = z.object({
+    latitude: z.number().min(-90).max(90),
+    longitude: z.number().min(-180).max(180),
+    accuracyMeters: z.number().positive().max(100000).optional(),
+  });
+
+  app.post('/api/delivery/:token/location', async (req, res) => {
+    const t = await getQrToken(prisma, String(req.params.token), 'DELIVERY');
+    const v = locationSchema.parse(req.body);
+    const loc = await prisma.locationEvidence.create({
+      data: {
+        orderId: t.orderId,
+        kind: 'DELIVERY_SCAN',
+        status: 'CAPTURED',
+        latitude: v.latitude,
+        longitude: v.longitude,
+        accuracyMeters: v.accuracyMeters || 10,
+        capturedAt: new Date(),
+        purgeAt: new Date(Date.now() + 30 * 864e5),
+      },
+    });
+    await prisma.orderEvent.create({
+      data: {
+        orderId: t.orderId,
+        eventType: 'LOCATION_CAPTURED',
+        actorType: 'DELIVERY',
+        note: `Courier GPS verified at QR scan: ${v.latitude.toFixed(5)}, ${v.longitude.toFixed(5)} (±${Math.round(v.accuracyMeters || 10)}m)`,
+        metadata: { latitude: v.latitude, longitude: v.longitude, accuracy: v.accuracyMeters },
+        source,
+      },
+    });
+    res.status(201).json({ success: true, location: loc });
+  });
+
+  app.post('/api/customer/:token/location', async (req, res) => {
+    const t = await getQrToken(prisma, String(req.params.token), 'CUSTOMER');
+    const v = locationSchema.parse(req.body);
+    const loc = await prisma.locationEvidence.create({
+      data: {
+        orderId: t.orderId,
+        kind: 'CUSTOMER_SCAN',
+        status: 'CAPTURED',
+        latitude: v.latitude,
+        longitude: v.longitude,
+        accuracyMeters: v.accuracyMeters || 10,
+        capturedAt: new Date(),
+        purgeAt: new Date(Date.now() + 30 * 864e5),
+      },
+    });
+    await prisma.orderEvent.create({
+      data: {
+        orderId: t.orderId,
+        eventType: 'LOCATION_CAPTURED',
+        actorType: 'CUSTOMER',
+        note: `Recipient GPS verified at QR scan: ${v.latitude.toFixed(5)}, ${v.longitude.toFixed(5)} (±${Math.round(v.accuracyMeters || 10)}m)`,
+        metadata: { latitude: v.latitude, longitude: v.longitude, accuracy: v.accuracyMeters },
+        source,
+      },
+    });
+    res.status(201).json({ success: true, location: loc });
+  });
   const requestOtpHandler = async (req: any, res: any) => {
     const result = await prisma.$transaction(async tx => {
       const t = await lockedToken(tx, String(req.params.token), 'CUSTOMER');

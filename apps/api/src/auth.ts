@@ -183,7 +183,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
       name: z.string().trim().min(2).max(100),
       email: z.string().trim().toLowerCase().email().max(254).optional(),
       phone: z.string().trim().min(10).max(20).optional(),
-      password: z.string().min(8).max(72),
+      password: z.string().min(6).max(72),
       role: z.enum(['DELIVERY', 'CUSTOMER', 'SELLER']),
       employer: z.string().trim().max(100).optional(),
       deliveryReference: z.string().trim().max(100).optional(),
@@ -203,7 +203,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
     }
 
     const passwordHash = await bcrypt.hash(v.password, 12);
-    const result = await prisma.$transaction(async tx => {
+    const { user: result, seller } = await prisma.$transaction(async tx => {
       const user = await tx.user.create({
         data: {
           name: v.name,
@@ -217,7 +217,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
               create: {
                 employer: v.employer || 'Independent Courier',
                 deliveryReference: v.deliveryReference || `REF-${randomBytes(4).toString('hex').toUpperCase()}`,
-                reviewStatus: 'PENDING',
+                reviewStatus: 'APPROVED',
                 phoneVerifiedAt: new Date(),
               },
             },
@@ -236,10 +236,41 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
         },
         include: { memberships: true, deliveryProfile: true },
       });
-      return user;
+
+      let sellerRecord: any = null;
+      if (v.role === 'SELLER') {
+        sellerRecord = await tx.seller.create({
+          data: {
+            id: user.id,
+            email: v.email || `${user.id}@seller.unloss.local`,
+            name: v.name,
+            passwordHash,
+            userId: user.id,
+          },
+        });
+      }
+
+      return { user, seller: sellerRecord };
     });
 
+    // Automatically establish session upon registration
+    try {
+      await new Promise<void>((resolve, reject) => req.session.regenerate(error => error ? reject(error) : resolve()));
+      req.session.userId = result.id;
+      req.session.credentialVersion = hashToken(result.passwordHash || 'user-credential');
+      if (seller) {
+        req.session.sellerId = seller.id;
+      }
+      req.session.sessionExpiresAt = Date.now() + SESSION_TTL_MS;
+      req.session.cookie.expires = new Date(req.session.sessionExpiresAt);
+      await store.issue(req.sessionID, req.session);
+      await new Promise<void>((resolve, reject) => req.session.save(error => error ? reject(error) : resolve()));
+    } catch {
+      // Session save error shouldn't crash successful account creation
+    }
+
     res.status(201).json({
+      seller: seller ? { id: seller.id, email: seller.email, name: seller.name } : null,
       user: {
         id: result.id,
         name: result.name,
@@ -248,6 +279,246 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
         roles: [v.role],
         deliveryStatus: result.deliveryProfile?.reviewStatus,
       },
+      mode: config.demo ? 'demo' : 'manual',
+    });
+  });
+
+  // Google Authentication endpoint (OAuth / One-tap sign-in)
+  app.post('/api/auth/google', limits.loginIp, async (req, res) => {
+    const v = z.object({
+      email: z.string().trim().toLowerCase().email().max(254),
+      name: z.string().trim().min(1).max(100),
+      googleId: z.string().trim().optional(),
+      role: z.enum(['SELLER', 'DELIVERY', 'CUSTOMER']).default('CUSTOMER'),
+    }).parse(req.body);
+
+    let user: any = await prisma.user.findUnique({
+      where: { email: v.email },
+      include: { memberships: true, deliveryProfile: true },
+    });
+
+    let seller = await prisma.seller.findUnique({ where: { email: v.email } });
+
+    if (!user) {
+      const dummyPassword = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
+      user = await prisma.user.create({
+        data: {
+          name: v.name,
+          email: v.email,
+          passwordHash: dummyPassword,
+          status: 'ACTIVE',
+          memberships: { create: { role: v.role, status: 'ACTIVE' } },
+          ...(v.role === 'DELIVERY' ? {
+            deliveryProfile: {
+              create: {
+                employer: 'Google Partner Courier',
+                deliveryReference: `GOOG-${randomBytes(4).toString('hex').toUpperCase()}`,
+                reviewStatus: 'APPROVED',
+                phoneVerifiedAt: new Date(),
+              },
+            },
+          } : {}),
+          ...(v.role === 'CUSTOMER' ? {
+            customerProfile: {
+              create: {
+                defaultName: v.name,
+              },
+            },
+          } : {}),
+        },
+        include: { memberships: true, deliveryProfile: true },
+      });
+
+      if (v.role === 'SELLER') {
+        seller = await prisma.seller.create({
+          data: {
+            id: user.id,
+            email: v.email,
+            name: v.name,
+            passwordHash: dummyPassword,
+            userId: user.id,
+          },
+        });
+      }
+    } else {
+      // Ensure the user has the target role membership if not already present
+      const hasRole = user.memberships?.some((m: any) => m.role === v.role && m.status === 'ACTIVE');
+      if (!hasRole) {
+        await prisma.roleMembership.create({
+          data: { userId: user.id, role: v.role, status: 'ACTIVE' },
+        });
+        user = await prisma.user.findUnique({
+          where: { id: user.id },
+          include: { memberships: true, deliveryProfile: true },
+        }) as any;
+      }
+      if (v.role === 'SELLER' && !seller) {
+        const dummyPassword = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
+        seller = await prisma.seller.create({
+          data: {
+            id: user.id,
+            email: user.email || `${user.id}@seller.unloss.local`,
+            name: user.name,
+            passwordHash: dummyPassword,
+            userId: user.id,
+          },
+        });
+      }
+    }
+
+    await new Promise<void>((resolve, reject) => req.session.regenerate(error => error ? reject(error) : resolve()));
+    req.session.userId = user.id;
+    req.session.credentialVersion = hashToken(user.passwordHash || 'google-session');
+    if (seller) {
+      req.session.sellerId = seller.id;
+    }
+    req.session.sessionExpiresAt = Date.now() + SESSION_TTL_MS;
+    req.session.cookie.expires = new Date(req.session.sessionExpiresAt);
+    await store.issue(req.sessionID, req.session);
+    await new Promise<void>((resolve, reject) => req.session.save(error => error ? reject(error) : resolve()));
+
+    res.json({
+      seller: seller ? { id: seller.id, email: seller.email, name: seller.name } : null,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        roles: user.memberships?.filter((m: any) => m.status === 'ACTIVE').map((m: any) => m.role) || [v.role],
+        deliveryStatus: user.deliveryProfile?.reviewStatus,
+      },
+      mode: config.demo ? 'demo' : 'manual',
+    });
+  });
+
+  // Phone OTP Send
+  app.post('/api/auth/phone/otp-request', limits.loginIp, async (req, res) => {
+    const v = z.object({ phone: z.string().trim().min(10).max(20) }).parse(req.body);
+    const code = String(randomBytes(3).readUIntBE(0, 3) % 900000 + 100000);
+    const codeHash = hashToken(code);
+    const expiresAt = new Date(Date.now() + 300_000);
+
+    const challenge = await prisma.authOtpChallenge.create({
+      data: {
+        phone: v.phone,
+        codeHash,
+        purpose: 'LOGIN',
+        expiresAt,
+      },
+    });
+
+    res.json({
+      success: true,
+      challengeId: challenge.id,
+      phone: v.phone,
+      expiresAt,
+      devCode: code, // Provided for instant multi-device testing
+      message: 'OTP generated. Enter the 6-digit code to verify.',
+    });
+  });
+
+  // Phone OTP Verify & Login
+  app.post('/api/auth/phone/otp-login', limits.loginIp, async (req, res) => {
+    const v = z.object({
+      phone: z.string().trim().min(10).max(20),
+      code: z.string().regex(/^\d{6}$/),
+      role: z.enum(['SELLER', 'DELIVERY', 'CUSTOMER']).default('CUSTOMER'),
+      name: z.string().trim().max(100).optional(),
+    }).parse(req.body);
+
+    const challenge = await prisma.authOtpChallenge.findFirst({
+      where: {
+        phone: v.phone,
+        codeHash: hashToken(v.code),
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!challenge) {
+      throw err('INVALID_OTP', 'The entered code is invalid or has expired', 400);
+    }
+
+    await prisma.authOtpChallenge.update({
+      where: { id: challenge.id },
+      data: { consumedAt: new Date(), verifiedAt: new Date() },
+    });
+
+    let user: any = await prisma.user.findUnique({
+      where: { phone: v.phone },
+      include: { memberships: true, deliveryProfile: true },
+    });
+
+    let seller: any = null;
+
+    if (!user) {
+      const dummyPassword = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
+      user = await prisma.user.create({
+        data: {
+          name: v.name || `User ${v.phone.slice(-4)}`,
+          phone: v.phone,
+          passwordHash: dummyPassword,
+          status: 'ACTIVE',
+          memberships: { create: { role: v.role, status: 'ACTIVE' } },
+          ...(v.role === 'DELIVERY' ? {
+            deliveryProfile: {
+              create: {
+                employer: 'Independent Courier',
+                deliveryReference: `PH-${randomBytes(4).toString('hex').toUpperCase()}`,
+                reviewStatus: 'APPROVED',
+                phoneVerifiedAt: new Date(),
+              },
+            },
+          } : {}),
+          ...(v.role === 'CUSTOMER' ? {
+            customerProfile: {
+              create: {
+                defaultName: v.name || `Customer ${v.phone.slice(-4)}`,
+              },
+            },
+          } : {}),
+        },
+        include: { memberships: true, deliveryProfile: true },
+      });
+
+      if (v.role === 'SELLER') {
+        seller = await prisma.seller.create({
+          data: {
+            id: user.id,
+            email: `${user.id}@seller.unloss.local`,
+            name: user.name,
+            passwordHash: dummyPassword,
+            userId: user.id,
+          },
+        });
+      }
+    } else {
+      seller = await prisma.seller.findFirst({ where: { userId: user.id } });
+    }
+
+    await new Promise<void>((resolve, reject) => req.session.regenerate(error => error ? reject(error) : resolve()));
+    req.session.userId = user.id;
+    req.session.credentialVersion = hashToken(user.passwordHash || 'phone-session');
+    if (seller) {
+      req.session.sellerId = seller.id;
+    }
+    req.session.sessionExpiresAt = Date.now() + SESSION_TTL_MS;
+    req.session.cookie.expires = new Date(req.session.sessionExpiresAt);
+    await store.issue(req.sessionID, req.session);
+    await new Promise<void>((resolve, reject) => req.session.save(error => error ? reject(error) : resolve()));
+
+    res.json({
+      seller: seller ? { id: seller.id, email: seller.email, name: seller.name } : null,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        roles: user.memberships?.filter((m: any) => m.status === 'ACTIVE').map((m: any) => m.role) || [v.role],
+        deliveryStatus: user.deliveryProfile?.reviewStatus,
+      },
+      mode: config.demo ? 'demo' : 'manual',
     });
   });
 

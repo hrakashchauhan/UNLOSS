@@ -60,10 +60,16 @@ export function registerOrderRoutes(app: Express, prisma: PrismaClient, config: 
     res.status(201).json({ ...result, order: sellerOrder(result.order) });
   });
   app.get('/api/orders/:id', auth, async (req, res) => {
-    const result = await prisma.order.findFirst({ where: { id: String(req.params.id), sellerId: currentSeller(res).id }, include: { events: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } } });
+    const result = await prisma.order.findFirst({
+      where: { id: String(req.params.id), sellerId: currentSeller(res).id },
+      include: {
+        events: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
+        locations: { orderBy: { createdAt: 'desc' } },
+      },
+    });
     if (!result) throw err('NOT_FOUND', 'Order not found', 404);
-    const { events, ...order } = result;
-    res.json({ order: sellerOrder(order), events });
+    const { events, locations, ...order } = result;
+    res.json({ order: sellerOrder(order), events, locations });
   });
   app.get('/api/orders/:id/events', auth, async (req, res) => {
     const { page, pageSize } = pagination(req.query), sellerId = currentSeller(res).id, orderId = String(req.params.id);

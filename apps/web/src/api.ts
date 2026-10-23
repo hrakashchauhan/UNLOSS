@@ -33,7 +33,7 @@ export interface CreateOrderRequest {
   deliveryAddress: { line1: string; line2?: string; city: string; state: string; postalCode: string };
 }
 export interface OrderCreated { order: Order; qr: { deliveryUrl: string; customerUrl: string } }
-export interface OrderDetail { order: Order; events: Event[] }
+export interface OrderDetail { order: Order; events: Event[]; locations?: any[] }
 export interface RewardSummary { creditCount: number; totalPaise: number; currency: string }
 export interface LedgerEntry { id: string; orderId: string; amountPaise: number; currency: string; type: 'DELIVERY_REWARD' | 'REVERSAL'; eligibilityReason: string; createdAt: string }
 export interface Notification { id: string; title: string; body: string; createdAt: string }
@@ -118,9 +118,9 @@ export const ordersApi = {
     return { ...response, order: normalizeOrder(response.order) };
   },
   async detail(id: string, signal?: AbortSignal): Promise<OrderDetail> {
-    const response = await api<{ order: RawOrder; events: Event[] }>(`/orders/${encodeURIComponent(id)}`, { signal });
+    const response = await api<{ order: RawOrder; events: Event[]; locations?: any[] }>(`/orders/${encodeURIComponent(id)}`, { signal });
     if (!response?.order || !Array.isArray(response.events)) throw new ApiError(200, 'INVALID_RESPONSE', 'The server returned incomplete order details.');
-    return { order: normalizeOrder(response.order), events: response.events };
+    return { order: normalizeOrder(response.order), events: response.events, locations: response.locations || [] };
   },
 };
 
