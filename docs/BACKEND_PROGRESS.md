@@ -102,3 +102,11 @@ No destructive migration, user-data reset, force push, frontend commit, unsuppor
 - Seller transitions lock the owned order row before validating the lifecycle; only seller operations are accepted. Delivery/customer outcomes cannot be forged through this endpoint. Cancellation revokes both tokens in the same transaction. No undocumented edit/delete route was added.
 - Added `test/workflow-fixture.ts` and `orders.integration.test.ts`: injected token failure rolls back creation, malformed inputs fail, pagination is deterministic, eight competing transitions produce exactly one event, and cancellation/actor restrictions hold.
 - Actual checks: lint, typecheck, build, **51 unit tests + 58 PostgreSQL integration tests passed (109 total)**. No migration required. Shared API contract/frontend files unchanged. Remaining public mutation concurrency is addressed in Phases 4–5.
+
+
+## Phase 4 completed — purpose-specific QR privacy
+
+- Added `src/qr.ts` and `test/qr.integration.test.ts`; delivery tokens are eligible only OUT_FOR_DELIVERY. Customer tokens permit accept/reject/redelivery during that state, and redelivery alone after attempted/failed/rejected/returned outcomes. Wrong purpose, malformed, unknown, expired, revoked and ineligible links all return the same 404.
+- Scans never mutate state. Public outcome/decision serialization includes only the order reference/status and safe event fields. Public delivery keeps the documented `ledgerEntry` key as null: the contract explicitly forbids exposing ledger data. Private notes, address, phone and seller identifiers are not returned.
+- Repeated scans, purpose isolation, expiry/revocation, state eligibility, response field allowlists and absence of scan rewards verified against PostgreSQL. Mutation concurrency and OTP consumption remain Phase 5 work.
+- Checks: lint/typecheck/build, **51 unit + 61 integration tests passed (112 total)**. Initial integration run timed out on ten sequential bcrypt checks under parallel load; raised the real-DB timeout to 15 seconds and capped workers at two. Assertions unchanged; full rerun passed. No schema/contract/frontend edits.
