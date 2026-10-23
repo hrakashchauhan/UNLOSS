@@ -1,163 +1,114 @@
-# UNLOSS: Free Cloud Deployment & Multi-Device Testing Guide
+# UNLOSS deployment and verification
 
-This guide provides a step-by-step walkthrough for deploying the UNLOSS Parcel Verification Platform on 100% free cloud tiers, allowing you to test end-to-end delivery workflows with persistent PostgreSQL data across multiple devices (phones, tablets, and laptops).
+Updated: 24 October 2026 (Asia/Calcutta).
 
----
+This replaces the earlier demo walkthrough. The requested target is a real-user service; simulated Google login and browser-displayed OTPs must not be used as real verification.
 
-## Architecture Overview
+## Deployment record
 
-```
-                      +-----------------------------------+
-                      |         End Users / Devices       |
-                      |  (Phones, Tablets, Laptops)      |
-                      +-----------------+-----------------+
-                                        |
-                 +----------------------+----------------------+
-                 |                                             |
-                 v                                             v
-+---------------------------------+           +---------------------------------+
-|       Frontend Web App          |           |        Public QR Scans          |
-|  Hosted on: Vercel / Cloudflare |           |   (/delivery/:token, /customer) |
-|   (Vite + React 18 SPA)         |           |   GPS Location Captured         |
-+----------------+----------------+           +----------------+----------------+
-                 |                                             |
-                 +----------------------+----------------------+
-                                        |  REST API / SSE (Cookies / JWT)
-                                        v
-                      +-----------------------------------+
-                      |          Backend API              |
-                      |   Hosted on: Render / Railway     |
-                      |   (Node.js + Express + Prisma)    |
-                      +-----------------+-----------------+
-                                        |  Database Connection Pooling
-                                        v
-                      +-----------------------------------+
-                      |      PostgreSQL Database          |
-                      |   Hosted on: Supabase / Neon      |
-                      |   (Free Managed PostgreSQL)       |
-                      +-----------------------------------+
+- Repository: https://github.com/hrakashchauhan/UNLOSS (main).
+- Frontend: https://unloss-web.vercel.app — Vercel project `unloss-web`, root `apps/web`, Vite, build `npm run build`, output `dist`.
+- Backend: https://unloss-api.onrender.com — Render service `unloss-api`, root `apps/api`.
+- Database: existing Supabase project `pmzjwuouygbgjvylpifq`, Singapore.
+- Database connection verified; public schema was empty before deployment. All six versioned Prisma migrations applied successfully. No demo seed was applied to this database.
+- Google project: `unloss-parcel-verification`. OAuth branding and web client created with owner approval.
+- OAuth client ID: `139401934145-t0iuiterjuba0hf2ncnmt8fuhb94sq33.apps.googleusercontent.com` (public identifier).
+- Source deployment: `b183ddc`.
+- Frontend deployment verified ready. Backend health/session verification: in progress.
+
+## 1. Database
+
+Use the Supabase **session pooler** (IPv4-compatible):
+
+```text
+postgresql://postgres.pmzjwuouygbgjvylpifq:<URL_ENCODED_PASSWORD>@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres?sslmode=require
 ```
 
----
+Store the real URL only in Render's secret environment settings. Do not commit it or put it in frontend variables. The existing password worked; it was not reset.
 
-## 1. Database Setup: Supabase or Neon (Free)
+For future releases, review migration SQL, inspect the target database and run `npm run db:migrate` from `apps/api` with the intended DATABASE_URL. This runs `prisma migrate deploy`. Do not use `db push` to replace managed migration history. `npm run build` generates the Prisma client.
 
-### Recommended: Supabase (https://supabase.com)
-1. Sign up for free at [supabase.com](https://supabase.com) using GitHub or Google.
-2. Click **New Project**:
-   - Name: `unloss-prod`
-   - Database Password: generate a strong password (save it).
-   - Region: Select the closest region (e.g., `ap-south-1` for Mumbai).
-3. Once initialized, navigate to **Project Settings** -> **Database**.
-4. Copy the **Connection URI** (Connection pooling mode or direct):
-   ```
-   postgresql://postgres.[PROJECT_REF]:[PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres?pgbouncer=true
-   ```
-5. In your local terminal, apply the database schema:
-   ```bash
-   cd apps/api
-   npx prisma db push
-   ```
+## 2. Render backend
 
----
+- Plan: existing Free web service.
+- Root: `apps/api`.
+- Build: `npm ci --include=dev && npm run build`.
+- Start: `node dist/server.js`.
+- Set health-check path to `/health/ready`.
+- Render supplies PORT; the application now respects it.
 
-## 2. Backend Deployment: Render (Free Web Service)
+```dotenv
+NODE_ENV=production
+DEMO_MODE=false
+API_HOST=0.0.0.0
+TRUST_PROXY_HOPS=1
+PRODUCTION_ENABLED=true
+APP_ORIGIN=https://unloss-web.vercel.app
+DATABASE_URL=<SECRET_SUPABASE_SESSION_POOLER_URL>
+SESSION_SECRET=<RENDER_GENERATED_RANDOM_SECRET>
+GOOGLE_CLIENT_ID=139401934145-t0iuiterjuba0hf2ncnmt8fuhb94sq33.apps.googleusercontent.com
+QR_TOKEN_TTL_DAYS=90
+```
 
-### Recommended: Render (https://render.com)
-1. Sign up for free at [render.com](https://render.com) using GitHub.
-2. Push your project to a GitHub repository:
-   ```bash
-   git add .
-   git commit -m "UNLOSS: Production MVP with multi-role auth, GPS scan, and clean QR print"
-   git push origin main
-   ```
-3. In Render Dashboard, click **New +** -> **Web Service**.
-4. Connect your GitHub repository.
-5. Configure the service:
-   - **Name**: `unloss-api`
-   - **Root Directory**: `apps/api`
-   - **Environment**: `Node`
-   - **Build Command**: `npm install && npm run build`
-   - **Start Command**: `node dist/server.js`
-   - **Instance Type**: `Free`
-6. Under **Environment Variables**, add:
-   ```env
-   NODE_ENV=production
-   PORT=10000
-   API_PORT=10000
-   APP_ORIGIN=https://unloss-web.vercel.app
-   DATABASE_URL=your_supabase_postgres_connection_string
-   SESSION_SECRET=generate_any_64_char_random_string
-   DEMO_MODE=true
-   QR_TOKEN_TTL_DAYS=90
-   ```
-7. Click **Create Web Service**. Once deployed, Render will provide your public backend URL (e.g. `https://unloss-api.onrender.com`).
+`--include=dev` is required during the TypeScript build even when NODE_ENV is production. The original `server.js` start command was invalid. An explicit cloud opt-in, HTTPS origin, public listener and one trusted proxy hop are required. Do not set DEMO_MODE=true in production.
 
----
+## 3. Vercel frontend
 
-## 3. Frontend Deployment: Vercel (Free)
+```dotenv
+VITE_API_BASE_URL=/api
+VITE_GOOGLE_CLIENT_ID=139401934145-t0iuiterjuba0hf2ncnmt8fuhb94sq33.apps.googleusercontent.com
+VITE_ENABLE_DEMO=false
+```
 
-### Recommended: Vercel (https://vercel.com)
-1. Sign up for free at [vercel.com](https://vercel.com) with GitHub.
-2. Click **Add New** -> **Project**.
-3. Import your UNLOSS repository.
-4. Configure Project Settings:
-   - **Framework Preset**: `Vite`
-   - **Root Directory**: Click edit and select `apps/web`
-   - **Build Command**: `npm run build`
-   - **Output Directory**: `dist`
-5. Under **Environment Variables**, add:
-   ```env
-   VITE_API_ORIGIN=https://unloss-api.onrender.com
-   ```
-6. Click **Deploy**. Vercel will deploy your site to `https://unloss-web.vercel.app`.
+`apps/web/vercel.json` sends `/api/*` to Render and provides SPA deep links. Keep frontend API requests same-origin so secure HttpOnly SameSite=Lax cookies work. The old VITE_API_ORIGIN variable is unused. Never put a database URL, session secret or Google client secret in VITE variables.
 
----
+## 4. Verified Google authentication
 
-## 4. Google Authentication Setup (Optional for Custom Client ID)
+Authorized JavaScript origin: `https://unloss-web.vercel.app`.
 
-1. Open [Google Cloud Console](https://console.cloud.google.com).
-2. Create a new project: `UNLOSS Parcel Verification`.
-3. Go to **APIs & Services** -> **OAuth consent screen**:
-   - User Type: **External**
-   - App Name: `UNLOSS`
-   - Authorized Domains: `vercel.app`, `onrender.com`
-4. Go to **Credentials** -> **Create Credentials** -> **OAuth Client ID**:
-   - Application Type: **Web Application**
-   - Authorized Javascript Origins:
-     - `https://unloss-web.vercel.app`
-     - `http://127.0.0.1:5173`
-   - Authorized Redirect URIs:
-     - `https://unloss-web.vercel.app/login`
-5. Copy your **Client ID** and paste it into your frontend config.
-*(Note: UNLOSS also includes a one-click simulated Google authentication provider so you can test Google logins immediately without waiting for Google Cloud approvals).*
+The browser loads Google Identity Services and sends its credential to the backend. The backend uses Google's official library to validate signature, expiry, audience and verified email. Accounts are identified by Google's stable subject. Existing password accounts are not silently linked by matching email. Existing Google accounts cannot gain roles merely by changing a login request.
 
----
+Google audience/publishing state must be checked in the dashboard. A client ID alone is not proof that all users can log in. Test a genuine Google sign-in and restored session before marking this stage complete.
 
-## 5. End-to-End Multi-Device Testing Checklist
+## 5. Live SMS, courier and payments — incomplete
 
-### Testing Across Devices:
-1. **Laptop / Desktop (Seller)**:
-   - Open your deployed URL: `https://unloss-web.vercel.app/login`.
-   - Register as **Seller** or sign in with Google / credentials.
-   - Navigate to `/orders/new` and generate a Dual-QR order.
-   - Click **Print Clean QR Sheet** or toggle **Print Preview Mode**:
-     - *Verified: Prints ONLY the high-contrast QR codes and their clear DELIVERY / CUSTOMER labels. Zero clutter, zero addresses, zero extra text.*
+Twilio Verify is the suggested managed OTP provider. Its trial is limited; real production SMS is paid. Firebase phone verification also requires a billing-enabled plan. No paid plan, SMS provider account, courier API or payment provider was purchased/configured in this deployment.
 
-2. **Smartphone A (Courier / Delivery Guy)**:
-   - Scan the **DELIVERY QR code** using the smartphone camera.
-   - Browser opens `/delivery/[token]`.
-   - The device prompts for GPS location permission.
-   - Once permitted, the badge shows: `📍 GPS Captured: [lat, lng] (±acc m)`.
-   - Location is transmitted and saved to PostgreSQL `LocationEvidence`.
+Until real providers and workflow authorization are implemented and tested:
 
-3. **Smartphone B (Customer / Recipient)**:
-   - Scan the **CUSTOMER QR code**.
-   - Tap **Request verification code** (Phone OTP).
-   - Enter the 6-digit code.
-   - Select **Accept Parcel** or **Request Redelivery** with structured reasons.
+- Phone OTP sign-in returns an unavailable response outside demo mode.
+- Public QR pages can be previewed; public delivery/customer mutations are disabled outside demo mode.
+- Courier registrations remain pending review and do not imply verified phone ownership.
+- Couriers cannot enumerate all sellers' live orders.
+- Unsigned courier webhook updates and simulated payment checkout/capture are disabled outside demo mode.
+- Internal reward records are not bank payouts.
 
-4. **Seller Real-Time Verification**:
-   - Return to the laptop Order Details page.
-   - See the updated status and the **📍 Physical GPS Scan Evidence** card.
-   - Click **View on Google Maps** to verify that the courier physically scanned the parcel at the customer's doorstep!
+Do not label browser GPS as proof that a courier physically visited an address; browser-reported coordinates are evidence supplied by the device.
+
+## 6. Verification checklist
+
+- [x] Supabase connection and managed schema migration.
+- [x] Backend unit tests: 71 passed.
+- [x] Frontend tests: 53 passed.
+- [x] API and frontend TypeScript checks.
+- [x] Vercel production deployment ready; direct `/login` returns HTTP 200.
+- [ ] Render `/health/ready` returns HTTP 200.
+- [ ] Proxied `/api/auth/me` returns 401 when signed out.
+- [ ] Registration/login sets a Secure, HttpOnly, SameSite=Lax session cookie.
+- [ ] Authenticated session survives reload and logout invalidates it.
+- [ ] Genuine Google account sign-in verified end to end.
+- [ ] Seller order/QR creation and direct QR route loading verified.
+- [ ] Real SMS received on a separate phone.
+- [ ] Customer decision and authorized courier completion verified across devices.
+- [ ] Physical print layout verified.
+
+## Provider references
+
+- Render Node deployment: https://render.com/docs/deploy-node-express-app
+- Vercel rewrites: https://vercel.com/docs/routing/rewrites
+- Vercel Vite routing: https://vercel.com/docs/frameworks/frontend/vite
+- Google server token verification: https://developers.google.com/identity/gsi/web/guides/verify-google-id-token
+- Twilio Verify pricing: https://www.twilio.com/en-us/verify/pricing
+- Firebase phone limits: https://firebase.google.com/docs/auth/limits
+
+Free Render instances sleep when idle and can take time to wake. Check provider dashboard limits before expecting continuous availability.
