@@ -1,6 +1,6 @@
 # UNLOSS backend progress
 
-Updated: 23 October 2026 (Asia/Kolkata). **Phases 1 and 2 are complete.** The user's “next phase” authorized Phase 2 only. Stop here; wait for `continue` before Phase 3.
+Updated: 23 October 2026 (Asia/Kolkata). The latest user instruction authorizes all remaining backend phases sequentially, with tested checkpoints.
 
 ## Repository and coordination audit
 
@@ -93,4 +93,12 @@ Manual testing used only the retained local test cluster and ignored generated c
 
 ## Boundaries
 
-No destructive migration, user-data reset, force push, frontend commit, unsupported external notification, courier/GPS evidence, or real payout is introduced. Existing MVP handlers remain explicitly unverified where noted. **Phase 3 requires `continue`.**
+No destructive migration, user-data reset, force push, frontend commit, unsupported external notification, courier/GPS evidence, or real payout is introduced. Existing MVP handlers remain explicitly unverified where noted. All remaining backend phases are now authorized.
+
+
+## Phase 3 completed — orders and history
+
+- Extracted `src/orders.ts` and `domain.ts`: atomic order/event/two-token creation, normalized bounded inputs, validated integer pagination/filter queries, stable tie-break ordering and snapshot-consistent lists. Flat seller responses remain compatible with the current frontend adapter.
+- Seller transitions lock the owned order row before validating the lifecycle; only seller operations are accepted. Delivery/customer outcomes cannot be forged through this endpoint. Cancellation revokes both tokens in the same transaction. No undocumented edit/delete route was added.
+- Added `test/workflow-fixture.ts` and `orders.integration.test.ts`: injected token failure rolls back creation, malformed inputs fail, pagination is deterministic, eight competing transitions produce exactly one event, and cancellation/actor restrictions hold.
+- Actual checks: lint, typecheck, build, **51 unit tests + 58 PostgreSQL integration tests passed (109 total)**. No migration required. Shared API contract/frontend files unchanged. Remaining public mutation concurrency is addressed in Phases 4–5.
