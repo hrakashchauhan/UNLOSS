@@ -63,6 +63,7 @@ model Order {
 
   @@index([sellerId, status])
   @@index([sellerId, createdAt])
+  @@unique([id, sellerId])
 }
 
 model OrderEvent {
@@ -125,7 +126,7 @@ model LedgerEntry {
   eligibilityReason String
   createdAt         DateTime @default(now())
   seller            Seller   @relation(fields: [sellerId], references: [id])
-  order             Order    @relation(fields: [orderId], references: [id])
+  order             Order    @relation(fields: [orderId, sellerId], references: [id, sellerId])
 
   @@unique([orderId, type])
   @@index([sellerId, createdAt])

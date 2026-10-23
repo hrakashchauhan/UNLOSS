@@ -129,3 +129,11 @@ No destructive migration, user-data reset, force push, frontend commit, unsuppor
 - Status and event writes remain in the locked transaction. Return legs cannot be skipped, repeated or used to return a completed order. Redelivery goes through the documented request/ready/dispatch sequence and requires fresh customer acceptance. Event timestamps are assigned after acquiring the lock.
 - Added `returns.integration.test.ts` for the complete failure/return/transit/received/redelivery sequence, last confirmed status, sourced reason history, no private QR access in transit, invalid reasons, concurrent duplicate return legs and foreign-seller access. Existing cancellation test now supplies the required reason; negative coverage verifies omission fails without writes.
 - Actual checks: lint/typecheck/build, **51 unit + 77 PostgreSQL integration tests (128 total)** passed. No migration, frontend or shared-contract edit needed.
+
+
+## Phase 7 completed — internal reward ledger
+
+- Added `rewards.ts`: verifies current attempt/acceptance expiry, the consumed verified challenge, its live customer token, and matching CUSTOMER ACCEPT event before completing. Completion, safe evidence-linked event, token revocation and 500-paise INR credit stay in the order-locked transaction. Caller-supplied amounts cannot affect credit. No payout or reversal mutation API exists.
+- Additive integrity migration retains existing rows, adds a composite order/seller foreign key and checks credit amount/currency. Existing unique `(orderId,type)` prevents duplicates. Migration deliberately fails if legacy ledger rows violate integrity; no automatic repair/deletion. Applied successfully only to the isolated test DB; schema diff reports no difference.
+- Added `rewards.integration.test.ts`: forced ledger failure rolls back status/event/revocation; retry succeeds once; flags or events without challenge evidence cannot qualify; missing acceptance fails; PostgreSQL rejects wrong currency, amount, owner and duplicate credit. Prior eight-way concurrent handoff test remains passing.
+- Actual checks: Prisma generate/validate/migrate/schema diff, lint/typecheck/build, **51 unit + 81 integration tests (132 total)** passed. No external payment/provider/notification behavior claimed. Frontend published a new main checkpoint during this phase; re-audit before reporting work.

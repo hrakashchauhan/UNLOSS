@@ -8,6 +8,7 @@ import { hashToken } from './rules.js';
 import { lockOrder, reasonFields } from './domain.js';
 import { customerActions, deliveryOutcomes, getQrToken, publicEvent, publicOrder, type QrPurpose } from './qr.js';
 import { changeStatus } from './workflow.js';
+import { completeVerifiedDelivery } from './rewards.js';
 
 const randomToken = () => randomBytes(32).toString('base64url');
 const codeDigest = (secret: string, id: string, code: string) => createHmac('sha256', secret).update(`otp\0${id}\0${code}`).digest('hex');
@@ -80,7 +81,7 @@ export function registerPublicRoutes(app: Express, prisma: PrismaClient, config:
       if (v.action === 'ACCEPT') {
         if (t.order.acceptedAttempt === t.order.deliveryAttempt && t.order.acceptedUntil && t.order.acceptedUntil > now) throw err('ALREADY_ACCEPTED', 'Customer has already accepted this attempt', 409);
         const order = await tx.order.update({ where: { id: t.orderId }, data: { acceptedAttempt: t.order.deliveryAttempt, acceptedUntil: ch.verificationExpiresAt, acceptedChallengeId: ch.id } });
-        const event = await tx.orderEvent.create({ data: { ...data, orderId: t.orderId, fromStatus: order.status, toStatus: order.status } });
+        const event = await tx.orderEvent.create({ data: { ...data, orderId: t.orderId, fromStatus: order.status, toStatus: order.status, createdAt: new Date() } });
         return { order, event };
       }
       return changeStatus(tx, t.order, v.action === 'REJECT' ? 'CUSTOMER_REJECTED' : 'REDELIVERY_REQUESTED', data);
@@ -97,12 +98,9 @@ export function registerPublicRoutes(app: Express, prisma: PrismaClient, config:
     const result = await prisma.$transaction(async tx => {
       const t = await lockedToken(tx, String(req.params.token), 'DELIVERY');
       const to = v.outcome === 'CUSTOMER_UNAVAILABLE' || v.outcome === 'ADDRESS_ISSUE' ? 'DELIVERY_FAILED' : v.outcome;
-      if (to === 'DELIVERED_VERIFIED') {
-        if (t.order.acceptedAttempt !== t.order.deliveryAttempt || !t.order.acceptedUntil || t.order.acceptedUntil <= new Date() || !t.order.acceptedChallengeId) throw err('CUSTOMER_ACCEPTANCE_REQUIRED', 'Customer must accept after OTP verification for this attempt', 409);
-      }
+      if (to === 'DELIVERED_VERIFIED') return completeVerifiedDelivery(tx, t.order, source, v.note);
       const reasonCode = v.reasonCode || ({ CUSTOMER_UNAVAILABLE: 'CUSTOMER_UNAVAILABLE', CUSTOMER_REJECTED: 'CUSTOMER_REJECTED', ADDRESS_ISSUE: 'ADDRESS_INCORRECT' } as Record<string,string>)[v.outcome] || null;
       const out = await changeStatus(tx, t.order, to, { eventType: to, actorType: 'DELIVERY', reasonCode, note: v.note, source, metadata: { deliveryAttempt: t.order.deliveryAttempt, outcome: v.outcome } });
-      if (to === 'DELIVERED_VERIFIED') await tx.ledgerEntry.create({ data: { sellerId: t.order.sellerId, orderId: t.orderId, amountPaise: 500, type: 'DELIVERY_REWARD', eligibilityReason: 'OTP_VERIFIED_CUSTOMER_ACCEPTANCE_AND_DELIVERY_HANDOFF' } });
       return out;
     });
     res.status(201).json({ order: publicOrder(result.order), event: publicEvent(result.event), ledgerEntry: null });
