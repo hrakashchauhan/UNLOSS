@@ -1,18 +1,48 @@
 # UNLOSS API Contract
 
-Version: 1.1 (integrated local MVP, 23 October 2026)
+Version: 1.2 (Phase 1 verified: foundation, multi-role auth, 4 distinct dashboards, 24 October 2026)
 
 This contract is the shared interface for `apps/web` and `apps/api`. The product source of truth is `UNLOSS_Master_Build_Reference_and_Parallel_Codex_Guide.md`. All timestamps are ISO-8601 UTC; report month boundaries use `Asia/Kolkata`.
 
 ## Conventions
 
 - Base path: `/api`; JSON request/response bodies except CSV export.
-- Seller routes require an authenticated seller session. Every database lookup is scoped to the session seller.
-- Public delivery/customer routes require a purpose-specific opaque token. Tokens are high-entropy random values; persist a hash for lookup, set a 90-day expiry, and revoke on completion/cancellation. Wrong-purpose, expired, revoked, unknown, or ineligible tokens return `404 TOKEN_INVALID` (do not reveal which condition failed).
-- Session cookie: `unloss.sid`, `HttpOnly`, `SameSite=Lax`, host-only. Sessions are persisted using hashed IDs, rotated on login and revoked on logout, with seven-day absolute expiry. Every mutation, including login and public token actions, requires the exact configured `Origin`. The cookie is configured Secure for future production use; production startup is currently refused.
-- Authentication and public-preview responses include `mode: "demo" | "manual"`, derived only from server configuration. Explicit server demo mode enables the labelled database-backed local workflow in the frontend. Missing/manual mode keeps public forms gated. This field is a capability label, never an authorization credential; the backend still validates each action.
-- Error envelope: `{ "error": { "code": "STABLE_CODE", "message": "Human-readable message", "details": {} }, "requestId": "..." }`. `details` is optional. Validation: 400; unauthenticated: 401; forbidden: 403; missing/inaccessible resource: 404; conflict/invalid transition: 409; throttled: 429; unavailable provider: 503.
-- Paginated lists accept `page` (default 1) and `pageSize` (default 25, max 100) and return `{ "items": [], "page": 1, "pageSize": 25, "total": 0 }`.
+- Role-based authorization: `SELLER`, `DELIVERY`, `CUSTOMER`, `ADMIN`.
+- Session cookie: `unloss.sid`, `HttpOnly`, `SameSite=Lax`, host-only. Sessions are persisted using hashed IDs, rotated on login and revoked on logout, with seven-day absolute expiry. Every mutation, including login and public token actions, requires the exact configured `Origin`.
+- Multi-role session endpoint: `GET /api/auth/session` returns `{ seller, user, mode }`.
+
+## Role-Based Route Matrix
+
+| Route | Role / Auth | Request | Success Response |
+| --- | --- | --- | --- |
+| `POST /auth/login` | Public | email/phone + password | 200 `{seller, user, mode}` |
+| `GET /auth/me` | Any Authenticated | none | 200 `{seller, user, mode}` |
+| `GET /auth/session` | Any Authenticated | none | 200 `{seller, user, mode}` |
+| `POST /auth/logout` | Any Authenticated | none | 204 No Content |
+| `POST /auth/register` | Public | registration schema | 201 `{user}` |
+| `POST /auth/demo-switch` | Demo mode only | `{role}` | 200 `{seller, user, mode}` |
+| `GET /delivery/pending` | DELIVERY | none | 200 `{items: Order[]}` |
+| `POST /orders/:id/claim` | DELIVERY (Approved) | `{latitude?, longitude?, accuracyMeters?}` | 201 `{claim}` |
+| `GET /delivery/earnings` | DELIVERY | none | 200 `{items, eligiblePaise, payoutAccount}` |
+| `POST /delivery/payout-account` | DELIVERY | `{method: 'UPI'\|'BANK', ...}` | 200 `{account}` |
+| `GET /admin/delivery-accounts` | ADMIN | none | 200 `{items: DeliveryProfile[]}` |
+| `POST /admin/delivery-accounts/:id/review` | ADMIN | `{action: 'APPROVE'\|'REJECT', reason?}` | 200 `{profile}` |
+| `POST /admin/payouts/run` | ADMIN | none | 200 `{batch, scheduledFor, note}` |
+| `POST /integrations/aftership/webhook` | Public Webhook | courier tracking payload | 200 `{accepted: true}` |
+| `GET /products` | SELLER | none | 200 `{items: Product[]}` |
+| `POST /products` | SELLER | `{name, description?, sku?, defaultQuantity?}` | 201 `{product}` |
+| `GET /drafts` | SELLER | none | 200 `{items: OrderDraft[]}` |
+| `POST /drafts` | SELLER | `{productName, quantity?}` | 201 `{draft, product, qr, status}` |
+| `PATCH /drafts/:id` | SELLER | recipient and delivery fields | 200 `{draft}` |
+| `POST /drafts/:id/activate` | SELLER | none | 201 `{orderId, qr}` |
+| `POST /drafts/:id/duplicate` | SELLER | none | 201 `{draft, qr}` |
+| `POST /drafts/:id/archive` | SELLER | none | 204 No Content |
+| `GET /seller/claims` | SELLER | none | 200 `{items: ParcelClaim[]}` |
+| `POST /seller/claims/:id/decide` | SELLER | `{action: 'APPROVE'\|'REJECT', reason?}` | 200 `{claim}` |
+| `GET /seller/funding` | SELLER | none | 200 `{account, txns, reservations, earnings}` |
+| `POST /seller/funding/checkout` | SELLER | `{amountPaise}` | 200 `{provider, providerOrderId, ...}` |
+| `POST /seller/funding/capture` | SELLER | `{providerOrderId, providerPaymentId}` | 200 `{status: 'CAPTURED', transaction}` |
+| `POST /orders/:id/fund-reserve` | SELLER | none | 201 `{reservation}` |
 
 ## Shared enums and lifecycle
 

@@ -5,6 +5,7 @@ import type { Config } from './config.js';
 import { currentUser, requireAnySession, requireRole } from './auth.js';
 import { err } from './http.js';
 import { lockOrder } from './domain.js';
+import { broadcastLiveEvent } from './live-events.js';
 
 const retentionDays = 30;
 
@@ -36,9 +37,17 @@ export function registerDeliveryClaimRoutes(app: Express, prisma: PrismaClient, 
       const purgeAt = new Date(Date.now() + retentionDays * 864e5);
       await tx.locationEvidence.create({ data: { orderId, deliveryUserId: user.id, claimId: claim.id, kind: 'CLAIM_SUBMISSION', status: v.latitude !== undefined ? 'CAPTURED' : 'DENIED', latitude: v.latitude, longitude: v.longitude, accuracyMeters: v.accuracyMeters, capturedAt: v.latitude !== undefined ? new Date() : null, failureReason: v.latitude === undefined ? 'PERMISSION_DENIED' : null, purgeAt } });
       await tx.orderEvent.create({ data: { orderId, eventType: 'CLAIM_SUBMITTED', toStatus: order.status, actorType: 'DELIVERY', actorId: user.id, source: config.demo ? 'DEMO' : 'MANUAL' } });
-      return claim;
+      return { claim, sellerId: order.sellerId };
     });
-    res.status(201).json({ claim: result });
+    broadcastLiveEvent({
+      id: `claim-${result.claim.id}`,
+      eventType: 'claim.submitted',
+      orderId,
+      sellerId: result.sellerId,
+      actorType: 'DELIVERY',
+      data: { claimId: result.claim.id, deliveryUserId: user.id },
+    });
+    res.status(201).json({ claim: result.claim });
   });
 
   app.get('/api/seller/claims', ...sellerOnly, async (req, res) => {
@@ -57,6 +66,14 @@ export function registerDeliveryClaimRoutes(app: Express, prisma: PrismaClient, 
       await tx.parcelClaim.update({ where: { id: claim.id }, data: { status: v.action === 'APPROVE' ? 'APPROVED' : 'REJECTED', decidedAt: new Date(), decidedBy: seller.id, rejectionReason: v.reason || null } });
       await tx.orderEvent.create({ data: { orderId: claim.orderId, eventType: v.action === 'APPROVE' ? 'CLAIM_APPROVED' : 'CLAIM_REJECTED', toStatus: claim.order.status, actorType: 'SELLER', actorId: seller.id, reasonCode: v.reason ? 'OTHER' : null, note: v.reason || null, source: config.demo ? 'DEMO' : 'MANUAL' } });
       return claim;
+    });
+    broadcastLiveEvent({
+      id: `decision-${result.id}`,
+      eventType: 'claim.decided',
+      orderId: result.orderId,
+      sellerId: seller.id,
+      actorType: 'SELLER',
+      data: { claimId: result.id, status: result.status, deliveryUserId: result.deliveryUserId },
     });
     res.json({ claim: result });
   });

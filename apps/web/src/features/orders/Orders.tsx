@@ -7,6 +7,7 @@ import { BackLink, Empty, ErrorBox, PageHead, Pagination, Status, errText, forma
 import { ResourceState } from '../../ui/ResourceState';
 import { useResource } from '../../ui/useResource';
 import { QrSheet } from './QrSheet';
+import { DualQrDraftManager } from './DualQrDraftManager';
 
 export function OrdersPage({ id, returns = false }: { id?: string; returns?: boolean }) {
   if (id === 'new') return <CreateOrder />;
@@ -47,6 +48,11 @@ export function validateOrder(body: CreateOrderRequest): string | null {
 }
 
 function CreateOrder() {
+  const [tab, setTab] = useState<'product' | 'direct'>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('flow') === 'product' ? 'product' : 'direct';
+    } catch { return 'direct'; }
+  });
   const [error, setError] = useState(''), [result, setResult] = useState<OrderCreated | null>(null), [busy, setBusy] = useState(false);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (busy) return;
@@ -57,15 +63,38 @@ function CreateOrder() {
     try { setResult(await ordersApi.create(body)); } catch (cause) { setError(errText(cause)); } finally { setBusy(false); }
   }
   if (result) return <QrSheet result={result} />;
-  return <><BackLink /><PageHead eyebrow="NEW ORDER" title="Create an order" text="Record the recipient and address. Two separate QR codes are generated after saving." />
-    <form className="panel create-form" onSubmit={submit} aria-busy={busy}>
-      <h2>Order details</h2><fieldset disabled={busy}><div className="form-grid">
-        <label>Seller reference (optional)<input name="sellerReference" maxLength={100} autoComplete="off" /></label><div className="form-section">RECIPIENT</div>
-        <label>Customer name<input name="name" required maxLength={160} autoComplete="name" /></label><label>Phone number<input name="phone" required type="tel" autoComplete="tel" placeholder="+919876543210" /><small className="field-help">Include + and the country code.</small></label>
-        <div className="form-section">DELIVERY ADDRESS</div><label className="span2">Address line 1<input name="line1" required maxLength={200} autoComplete="address-line1" /></label><label className="span2">Address line 2 (optional)<input name="line2" maxLength={200} autoComplete="address-line2" /></label>
-        <label>City<input name="city" required autoComplete="address-level2" /></label><label>State<input name="state" required autoComplete="address-level1" /></label><label>Postal code<input name="postalCode" required autoComplete="postal-code" /></label>
-      </div></fieldset>{error && <ErrorBox message={error} />}<div className="form-actions"><Link to="/orders" className="button subtle">Cancel</Link><button className="button primary" disabled={busy}>{busy ? 'Creating…' : 'Create order'}</button></div>
-    </form></>;
+  return <><BackLink /><PageHead eyebrow="NEW ORDER" title="Create an order" text="Generate dual QR codes instantly by product, or enter full recipient details directly." />
+    <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+      <button
+        type="button"
+        className={`button ${tab === 'product' ? 'primary' : 'subtle'}`}
+        onClick={() => setTab('product')}
+        style={{ minHeight: '38px', fontWeight: 600 }}
+      >
+        ⚡ Product-First Dual QR Generator (Instant Draft)
+      </button>
+      <button
+        type="button"
+        className={`button ${tab === 'direct' ? 'primary' : 'subtle'}`}
+        onClick={() => setTab('direct')}
+        style={{ minHeight: '38px', fontWeight: 600 }}
+      >
+        📝 Direct Recipient Form
+      </button>
+    </div>
+
+    {tab === 'product' ? (
+      <DualQrDraftManager onOrderActivated={(id) => { window.location.href = `/orders/${encodeURIComponent(id)}`; }} />
+    ) : (
+      <form className="panel create-form" onSubmit={submit} aria-busy={busy}>
+        <h2>Order details</h2><fieldset disabled={busy}><div className="form-grid">
+          <label>Seller reference (optional)<input name="sellerReference" maxLength={100} autoComplete="off" /></label><div className="form-section">RECIPIENT</div>
+          <label>Customer name<input name="name" required maxLength={160} autoComplete="name" /></label><label>Phone number<input name="phone" required type="tel" autoComplete="tel" placeholder="+919876543210" /><small className="field-help">Include + and the country code.</small></label>
+          <div className="form-section">DELIVERY ADDRESS</div><label className="span2">Address line 1<input name="line1" required maxLength={200} autoComplete="address-line1" /></label><label className="span2">Address line 2 (optional)<input name="line2" maxLength={200} autoComplete="address-line2" /></label>
+          <label>City<input name="city" required autoComplete="address-level2" /></label><label>State<input name="state" required autoComplete="address-level1" /></label><label>Postal code<input name="postalCode" required autoComplete="postal-code" /></label>
+        </div></fieldset>{error && <ErrorBox message={error} />}<div className="form-actions"><Link to="/orders" className="button subtle">Cancel</Link><button className="button primary" disabled={busy}>{busy ? 'Creating…' : 'Create order'}</button></div>
+      </form>
+    )}</>;
 }
 
 export function Timeline({ events }: { events: Event[] }) {

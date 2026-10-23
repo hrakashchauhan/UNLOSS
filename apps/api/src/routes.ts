@@ -9,6 +9,7 @@ import { registerShipmentRoutes } from './shipments.js';
 import { registerDeliveryClaimRoutes } from './delivery-claims.js';
 import { registerFundingRoutes } from './funding.js';
 import { registerAppNotificationRoutes } from './notifications-app.js';
+import { registerLiveEventRoutes } from './live-events.js';
 
 export function registerRoutes(app: Express, prisma: PrismaClient, config: Config) {
   registerOrderRoutes(app, prisma, config);
@@ -19,4 +20,5 @@ export function registerRoutes(app: Express, prisma: PrismaClient, config: Confi
   registerDeliveryClaimRoutes(app, prisma, config);
   registerFundingRoutes(app, prisma, config);
   registerAppNotificationRoutes(app, prisma, config);
+  registerLiveEventRoutes(app, prisma, config);
 }

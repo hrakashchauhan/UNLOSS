@@ -146,7 +146,15 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
     next();
   };
 
-  app.get('/api/auth/me', authSeller, (_req, res) => res.json({ seller: currentSeller(res), mode: config.demo ? 'demo' : 'manual' }));
+  app.get('/api/auth/me', authAny, requireAuth, (_req, res) => {
+    const seller = (res.locals as any).seller || null;
+    const user = (res.locals as any).authUser || null;
+    res.json({
+      seller,
+      ...(user ? { user } : {}),
+      mode: config.demo ? 'demo' : 'manual',
+    });
+  });
   app.post('/api/auth/logout', authAny, requireAuth, async (req, res) => {
     await new Promise<void>((resolve, reject) => req.session.destroy(error => error ? reject(error) : resolve()));
     res.clearCookie(SESSION_COOKIE, sessionCookieOptions(config));

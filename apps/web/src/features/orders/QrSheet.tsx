@@ -7,7 +7,7 @@ import { ErrorBox, Status } from '../../ui/common';
 export function safeQrUrl(value: string, purpose: 'delivery' | 'customer') {
   try {
     const url = new URL(value, window.location.origin);
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || !new RegExp(`^/${purpose}/[^/]+$`).test(url.pathname) || url.search || url.hash) return null;
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || !new RegExp(`^/(draft/)?${purpose}/[^/]+$`).test(url.pathname) || url.search || url.hash) return null;
     return url.href;
   } catch { return null; }
 }

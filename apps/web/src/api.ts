@@ -2,22 +2,29 @@
 export type OrderStatus = 'CREATED' | 'READY_FOR_DISPATCH' | 'OUT_FOR_DELIVERY' | 'DELIVERY_ATTEMPTED' | 'DELIVERED_VERIFIED' | 'CUSTOMER_REJECTED' | 'DELIVERY_FAILED' | 'RETURN_INITIATED' | 'RETURN_IN_TRANSIT' | 'RETURNED_TO_SELLER' | 'REDELIVERY_REQUESTED' | 'CANCELLED';
 export type ReasonCode = 'CUSTOMER_UNAVAILABLE' | 'CUSTOMER_REJECTED' | 'ADDRESS_INCORRECT' | 'ADDRESS_INCOMPLETE' | 'PHONE_UNREACHABLE' | 'DELIVERY_DELAY' | 'PACKAGE_DAMAGED' | 'PACKAGE_MISMATCH' | 'CUSTOMER_REQUESTED_REDELIVERY' | 'SELLER_CANCELLED' | 'COURIER_REPORTED_OTHER' | 'OTHER';
 export type ActorType = 'SELLER' | 'DELIVERY' | 'CUSTOMER' | 'SYSTEM';
-export type EventSource = 'MANUAL' | 'DEMO' | 'INTEGRATION';
+export type EventSourceOrigin = 'MANUAL' | 'DEMO' | 'INTEGRATION';
 export interface Seller { id: string; name: string; email: string }
 export interface RawOrder {
   id: string; sellerId: string; sellerReference: string | null; status: OrderStatus;
+  deliveryAttempt?: number;
   customerName: string; customerPhone: string; addressLine1: string; addressLine2: string | null;
   city: string; state: string; postalCode: string; createdAt: string; updatedAt: string;
 }
 export interface Order {
   id: string; sellerReference: string | null; status: OrderStatus; createdAt: string; updatedAt: string;
+  deliveryAttempt?: number;
   customer: { name: string; phone: string };
   deliveryAddress: { line1: string; line2: string | null; city: string; state: string; postalCode: string };
+  customerName?: string;
+  addressLine1?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
 }
 export interface Event {
   id: string; orderId: string; eventType: string; fromStatus: OrderStatus | null; toStatus: OrderStatus | null;
   actorType: ActorType; actorId: string | null; reasonCode: ReasonCode | null; note: string | null;
-  source: EventSource; createdAt: string; metadata?: Record<string, unknown> | null;
+  source: EventSourceOrigin; createdAt: string; metadata?: Record<string, unknown> | null;
 }
 export interface Page<T> { items: T[]; page: number; pageSize: number; total: number }
 export interface DashboardSummary { totalOrders: number; statusCounts: Partial<Record<OrderStatus, number>>; rewardTotalPaise: number }
@@ -58,8 +65,14 @@ export function normalizeOrder(raw: RawOrder): Order {
   return {
     id: raw.id, sellerReference: raw.sellerReference, status: raw.status,
     createdAt: raw.createdAt, updatedAt: raw.updatedAt,
+    deliveryAttempt: raw.deliveryAttempt ?? 0,
     customer: { name: raw.customerName, phone: raw.customerPhone },
     deliveryAddress: { line1: raw.addressLine1, line2: raw.addressLine2, city: raw.city, state: raw.state, postalCode: raw.postalCode },
+    customerName: raw.customerName,
+    addressLine1: raw.addressLine1,
+    city: raw.city,
+    state: raw.state,
+    postalCode: raw.postalCode,
   };
 }
 
@@ -116,4 +129,227 @@ export function qs(values: Record<string, string | number | undefined>): string 
   for (const [key, value] of Object.entries(values)) if (value !== undefined && value !== '') query.set(key, String(value));
   const encoded = query.toString();
   return encoded ? `?${encoded}` : '';
+}
+
+export interface Product { id: string; name: string; description: string | null; sku: string | null; defaultQuantity: number; createdAt: string }
+export interface DraftQrToken { id: string; purpose: 'DELIVERY' | 'CUSTOMER'; tokenHash: string; encryptedToken: string; expiresAt: string; revokedAt: string | null }
+export interface OrderDraft {
+  id: string; sellerId: string; productId: string; status: 'DRAFT' | 'ACTIVATED';
+  quantity: number; recipientName: string | null; recipientPhone: string | null;
+  addressLine1: string | null; addressLine2: string | null; city: string | null; state: string | null; postalCode: string | null;
+  courier: string | null; trackingNumber: string | null; notes: string | null; activatedOrderId: string | null;
+  createdAt: string; updatedAt: string; product: Product; tokens: DraftQrToken[];
+}
+export interface DraftCreated {
+  draft: OrderDraft; product: Product; qr: { deliveryUrl: string; customerUrl: string }; status: string;
+}
+export interface ParcelClaim {
+  id: string; orderId: string; deliveryUserId: string; status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  note: string | null; rejectionReason: string | null; claimedAt: string; decidedAt: string | null;
+  order?: RawOrder; deliveryUser?: { id: string; name: string; phone?: string };
+}
+export interface FundingAccount { availablePaise: number; reservedPaise: number; refundedPaise: number }
+export interface FundingTransaction { id: string; provider: string; providerOrderId: string; totalPaise: number; principalPaise: number; status: string; createdAt: string }
+export interface BudgetReservation { id: string; orderId: string; rewardPaise: number; feeAllowancePaise: number; totalPaise: number; status: string; createdAt: string; order?: RawOrder }
+export interface DeliveryEarning { id: string; orderId: string; amountPaise: number; status: 'PENDING' | 'ELIGIBLE' | 'PAID'; createdAt: string; order?: RawOrder }
+export interface PayoutAccount { id: string; method: string; upiId?: string; accountName?: string; accountNumberLast4?: string; ifsc?: string; status: string }
+export interface DeliveryProfileRow { id: string; userId: string; employer: string; deliveryReference: string; reviewStatus: 'PENDING' | 'APPROVED' | 'REJECTED'; user: { id: string; name: string; email: string | null; phone: string | null } }
+
+export const draftsApi = {
+  async list(signal?: AbortSignal): Promise<{ items: OrderDraft[] }> {
+    return api<{ items: OrderDraft[] }>('/drafts', { signal });
+  },
+  async create(body: { productName: string; quantity?: number }): Promise<DraftCreated> {
+    return api<DraftCreated>('/drafts', { method: 'POST', body: JSON.stringify(body) });
+  },
+  async get(id: string, signal?: AbortSignal): Promise<{ draft: OrderDraft }> {
+    return api<{ draft: OrderDraft }>(`/drafts/${encodeURIComponent(id)}`, { signal });
+  },
+  async update(id: string, body: Partial<OrderDraft>): Promise<{ draft: OrderDraft }> {
+    return api<{ draft: OrderDraft }>(`/drafts/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) });
+  },
+  async duplicate(id: string): Promise<{ draft: OrderDraft; qr: { deliveryUrl: string; customerUrl: string } }> {
+    return api<{ draft: OrderDraft; qr: { deliveryUrl: string; customerUrl: string } }>(`/drafts/${encodeURIComponent(id)}/duplicate`, { method: 'POST' });
+  },
+  async archive(id: string): Promise<void> {
+    return api<void>(`/drafts/${encodeURIComponent(id)}/archive`, { method: 'POST' });
+  },
+  async activate(id: string): Promise<{ orderId: string; qr: { deliveryUrl: string; customerUrl: string } }> {
+    return api<{ orderId: string; qr: { deliveryUrl: string; customerUrl: string } }>(`/drafts/${encodeURIComponent(id)}/activate`, { method: 'POST' });
+  },
+};
+
+export const claimsApi = {
+  async deliveryPending(signal?: AbortSignal): Promise<{ items: RawOrder[] }> {
+    return api<{ items: RawOrder[] }>('/delivery/pending', { signal });
+  },
+  async claimOrder(id: string, coords?: { latitude?: number; longitude?: number; accuracyMeters?: number }): Promise<{ claim: ParcelClaim }> {
+    return api<{ claim: ParcelClaim }>(`/orders/${encodeURIComponent(id)}/claim`, { method: 'POST', body: JSON.stringify(coords || {}) });
+  },
+  async sellerClaims(signal?: AbortSignal): Promise<{ items: ParcelClaim[] }> {
+    return api<{ items: ParcelClaim[] }>('/seller/claims', { signal });
+  },
+  async decide(id: string, action: 'APPROVE' | 'REJECT', reason?: string): Promise<{ claim: ParcelClaim }> {
+    return api<{ claim: ParcelClaim }>(`/seller/claims/${encodeURIComponent(id)}/decide`, { method: 'POST', body: JSON.stringify({ action, reason }) });
+  },
+};
+
+export const fundingApi = {
+  async getSummary(signal?: AbortSignal): Promise<{ account: FundingAccount; txns: FundingTransaction[]; reservations: BudgetReservation[]; earnings: DeliveryEarning[] }> {
+    return api<{ account: FundingAccount; txns: FundingTransaction[]; reservations: BudgetReservation[]; earnings: DeliveryEarning[] }>('/seller/funding', { signal });
+  },
+  async checkout(amountPaise: number): Promise<{ providerOrderId: string; principalPaise: number; feePaise: number; totalPaise: number; currency: string }> {
+    return api<{ providerOrderId: string; principalPaise: number; feePaise: number; totalPaise: number; currency: string }>('/seller/funding/checkout', { method: 'POST', body: JSON.stringify({ amountPaise }) });
+  },
+  async capture(providerOrderId: string, providerPaymentId: string): Promise<{ status: string; transaction: FundingTransaction }> {
+    return api<{ status: string; transaction: FundingTransaction }>('/seller/funding/capture', { method: 'POST', body: JSON.stringify({ providerOrderId, providerPaymentId }) });
+  },
+  async reserve(orderId: string): Promise<{ reservation: BudgetReservation }> {
+    return api<{ reservation: BudgetReservation }>(`/orders/${encodeURIComponent(orderId)}/fund-reserve`, { method: 'POST' });
+  },
+};
+
+export const deliveryApi = {
+  async earnings(signal?: AbortSignal): Promise<{ items: DeliveryEarning[]; eligiblePaise: number; payoutAccount: PayoutAccount | null }> {
+    return api<{ items: DeliveryEarning[]; eligiblePaise: number; payoutAccount: PayoutAccount | null }>('/delivery/earnings', { signal });
+  },
+  async savePayoutAccount(body: { method: 'UPI' | 'BANK'; upiId?: string; accountName?: string; accountNumberLast4?: string; ifsc?: string }): Promise<{ account: PayoutAccount }> {
+    return api<{ account: PayoutAccount }>('/delivery/payout-account', { method: 'POST', body: JSON.stringify(body) });
+  },
+};
+
+export const adminApi = {
+  async deliveryAccounts(signal?: AbortSignal): Promise<{ items: DeliveryProfileRow[] }> {
+    return api<{ items: DeliveryProfileRow[] }>('/admin/delivery-accounts', { signal });
+  },
+  async reviewAccount(id: string, action: 'APPROVE' | 'REJECT', reason?: string): Promise<{ profile: DeliveryProfileRow }> {
+    return api<{ profile: DeliveryProfileRow }>(`/admin/delivery-accounts/${encodeURIComponent(id)}/review`, { method: 'POST', body: JSON.stringify({ action, reason }) });
+  },
+  async runPayouts(): Promise<{ batch: { id: string; status: string; scheduledFor: string }; note: string }> {
+    return api<{ batch: { id: string; status: string; scheduledFor: string }; note: string }>('/admin/payouts/run', { method: 'POST' });
+  },
+};
+
+export const shipmentApi = {
+  async register(orderId: string, courier: string, trackingNumber: string): Promise<{ shipment: any }> {
+    return api<{ shipment: any }>(`/orders/${encodeURIComponent(orderId)}/shipment`, { method: 'POST', body: JSON.stringify({ courier, trackingNumber }) });
+  },
+  async get(orderId: string, signal?: AbortSignal): Promise<{ shipment: any }> {
+    return api<{ shipment: any }>(`/orders/${encodeURIComponent(orderId)}/shipment`, { signal });
+  },
+  async simulateWebhook(body: { trackingNumber: string; status: string; occurredAt: string; providerEventId: string; message?: string }): Promise<{ accepted: boolean }> {
+    return api<{ accepted: boolean }>('/integrations/aftership/webhook', { method: 'POST', body: JSON.stringify(body) });
+  },
+};
+
+export const authApi = {
+  async session(signal?: AbortSignal): Promise<{ seller: Seller | null; user: { id: string; name: string; email: string | null; phone: string | null; roles: string[]; deliveryStatus?: string } | null; mode: string }> {
+    return api<{ seller: Seller | null; user: { id: string; name: string; email: string | null; phone: string | null; roles: string[]; deliveryStatus?: string } | null; mode: string }>('/auth/session', { signal });
+  },
+  async demoSwitch(role: 'SELLER' | 'DELIVERY' | 'CUSTOMER' | 'ADMIN'): Promise<{ seller: Seller | null; user: any; mode: string }> {
+    return api<{ seller: Seller | null; user: any; mode: string }>('/auth/demo-switch', { method: 'POST', body: JSON.stringify({ role }) });
+  },
+  async register(body: any): Promise<{ user: any }> {
+    return api<{ user: any }>('/auth/register', { method: 'POST', body: JSON.stringify(body) });
+  },
+};
+
+export function subscribeToLiveEvents(callbacks: {
+  onEvent?: (event: any) => void;
+  onStatusChange?: (status: 'connected' | 'reconnecting' | 'offline', lastTime?: string) => void;
+}): () => void {
+  let eventSource: InstanceType<typeof window.EventSource> | null = null;
+  let pollTimer: number | null = null;
+  let active = true;
+  let lastEventId = '';
+  let lastTime = '';
+
+  const startPollingFallback = () => {
+    callbacks.onStatusChange?.('offline', lastTime);
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = window.setInterval(async () => {
+      if (!active) return;
+      try {
+        const url = `${API_BASE}/events/poll${lastTime ? `?since=${encodeURIComponent(lastTime)}` : ''}`;
+        const res = await fetch(url, { credentials: 'include' });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.timestamp) lastTime = json.timestamp;
+          if (Array.isArray(json.items)) {
+            for (const item of json.items) {
+              callbacks.onEvent?.(item);
+            }
+          }
+          callbacks.onStatusChange?.('connected', lastTime);
+        }
+      } catch {
+        callbacks.onStatusChange?.('offline', lastTime);
+      }
+    }, 10_000);
+  };
+
+  const connect = () => {
+    if (!active || typeof window === 'undefined' || typeof window.EventSource === 'undefined') {
+      startPollingFallback();
+      return;
+    }
+
+    callbacks.onStatusChange?.('reconnecting', lastTime);
+    const url = `${API_BASE}/events/live${lastEventId ? `?lastEventId=${encodeURIComponent(lastEventId)}` : ''}`;
+
+    try {
+      eventSource = new window.EventSource(url, { withCredentials: true });
+
+      eventSource.onopen = () => {
+        callbacks.onStatusChange?.('connected', new Date().toLocaleTimeString());
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      };
+
+      eventSource.addEventListener('connected', (e: MessageEvent) => {
+        try {
+          const data = JSON.parse(e.data);
+          lastTime = data.timestamp || new Date().toLocaleTimeString();
+          callbacks.onStatusChange?.('connected', lastTime);
+        } catch { /* noop */ }
+      });
+
+      const handleIncoming = (e: MessageEvent) => {
+        if (e.lastEventId) lastEventId = e.lastEventId;
+        lastTime = new Date().toLocaleTimeString();
+        callbacks.onStatusChange?.('connected', lastTime);
+        try {
+          const parsed = JSON.parse(e.data);
+          callbacks.onEvent?.(parsed);
+        } catch { /* noop */ }
+      };
+
+      eventSource.addEventListener('order.update', handleIncoming);
+      eventSource.addEventListener('claim.submitted', handleIncoming);
+      eventSource.addEventListener('claim.decided', handleIncoming);
+
+      eventSource.onerror = () => {
+        if (!active) return;
+        callbacks.onStatusChange?.('reconnecting', lastTime);
+        eventSource?.close();
+        setTimeout(() => {
+          if (active && eventSource?.readyState === window.EventSource.CLOSED) {
+            startPollingFallback();
+          }
+        }, 3000);
+      };
+    } catch {
+      startPollingFallback();
+    }
+  };
+
+  connect();
+
+  return () => {
+    active = false;
+    if (eventSource) eventSource.close();
+    if (pollTimer) clearInterval(pollTimer);
+  };
 }

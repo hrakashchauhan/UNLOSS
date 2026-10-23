@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Bell, Box } from 'lucide-react';
 import { api, ordersApi, qs, type DashboardSummary, type LedgerEntry, type MonthlyReport, type Notification, type Page, type RewardSummary } from '../../api';
@@ -8,19 +8,232 @@ import { ResourceState } from '../../ui/ResourceState';
 import { useResource } from '../../ui/useResource';
 import { OrdersTable } from '../orders/Orders';
 
+import { claimsApi, fundingApi, type ParcelClaim, type FundingAccount, type BudgetReservation } from '../../api';
+import { AlertCircle, CheckCircle2, CreditCard, Plus, Truck, XCircle } from 'lucide-react';
+
 export function Stat({ label, value, sub }: { label: string; value: string | number; sub: string }) {
   return <div className="stat-card"><div className="stat-top">{label}</div><strong>{value}</strong><small>{sub}</small></div>;
 }
+
 export function Dashboard() {
+  const [topUpModal, setTopUpModal] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState('500');
+  const [fundingBusy, setFundingBusy] = useState(false);
+  const [claimActionBusy, setClaimActionBusy] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState('');
+
   const load = useCallback(async (signal: AbortSignal) => {
-    const [summary, orders] = await Promise.all([api<DashboardSummary>('/dashboard/summary', { signal }), ordersApi.list({ page: 1, pageSize: 5 }, signal)]);
-    return { summary, orders };
+    const [summary, orders, claimsRes, fundingRes] = await Promise.all([
+      api<DashboardSummary>('/dashboard/summary', { signal }),
+      ordersApi.list({ page: 1, pageSize: 5 }, signal),
+      claimsApi.sellerClaims(signal).catch(() => ({ items: [] as ParcelClaim[] })),
+      fundingApi.getSummary(signal).catch(() => ({ account: { availablePaise: 0, reservedPaise: 0, refundedPaise: 0 }, txns: [], reservations: [], earnings: [] })),
+    ]);
+    return { summary, orders, claims: claimsRes.items, funding: fundingRes };
   }, []);
-  const resource = useResource('dashboard', load), data = resource.data?.summary;
-  return <><div className="page-heading"><PageHead eyebrow="SELLER WORKSPACE" title="Delivery overview" text="Current order counts from your saved records." /><Link className="button primary" to="/orders/new">Create an order</Link></div>
-    <ResourceState {...resource} retry={resource.reload} label="overview" />{data && <><div className="stat-grid"><Stat label="Total orders" value={data.totalOrders} sub="All time" /><Stat label="Out for delivery" value={data.statusCounts.OUT_FOR_DELIVERY || 0} sub="Current status" /><Stat label="Verified deliveries" value={data.statusCounts.DELIVERED_VERIFIED || 0} sub="Current status" /><Stat label="Returned to seller" value={data.statusCounts.RETURNED_TO_SELLER || 0} sub="Current status" /></div>
-    <div className="dashboard-grid"><section className="panel table-panel"><div className="panel-title"><h2>Recent orders</h2><Link to="/orders">View all orders</Link></div><OrdersTable orders={resource.data!.orders.items} /></section><section className="panel"><h2>Next steps</h2><div className="quick-links"><Link to="/orders/new">Create a new order →</Link><Link to="/returns">Review returns and redelivery →</Link><Link to="/reports">Inspect monthly activity →</Link><Link to="/rewards">Internal reward ledger: {money(data.rewardTotalPaise)} →</Link></div><p className="notice">₹5 credits require customer OTP acceptance and an eligible delivery handoff. No payout is offered.</p></section></div>
-    <section className="panel"><h2>Orders by confirmed status</h2><div className="status-summary">{Object.entries(data.statusCounts).map(([status, count]) => <Link key={status} to={`/orders?status=${encodeURIComponent(status)}`}><span>{pretty(status)}</span><b>{count}</b></Link>)}</div>{!Object.keys(data.statusCounts).length && <p className="muted">No saved orders yet.</p>}<button className="button subtle" onClick={resource.reload}>Refresh overview</button></section></>}</>;
+
+  const resource = useResource('dashboard', load);
+  const data = resource.data?.summary;
+  const claims = resource.data?.claims || [];
+  const funding = resource.data?.funding?.account;
+
+  async function handleClaimDecision(claimId: string, action: 'APPROVE' | 'REJECT') {
+    setClaimActionBusy(claimId);
+    setActionNotice('');
+    try {
+      await claimsApi.decide(claimId, action, action === 'REJECT' ? 'Seller review declined' : undefined);
+      setActionNotice(`Claim ${action === 'APPROVE' ? 'approved' : 'rejected'}. Order status updated.`);
+      resource.reload();
+    } catch (e) {
+      setActionNotice(`Action failed: ${errText(e)}`);
+    } finally {
+      setClaimActionBusy(null);
+    }
+  }
+
+  async function handleTopUp(e: FormEvent) {
+    e.preventDefault();
+    const amountRupees = Number(topUpAmount) || 500;
+    const amountPaise = amountRupees * 100;
+    setFundingBusy(true);
+    setActionNotice('');
+    try {
+      const checkout = await fundingApi.checkout(amountPaise);
+      const fakePaymentId = `pay_sim_${Date.now().toString(36)}`;
+      await fundingApi.capture(checkout.providerOrderId, fakePaymentId);
+      setActionNotice(`₹${amountRupees} added to your reward budget via Razorpay sandbox.`);
+      setTopUpModal(false);
+      resource.reload();
+    } catch (e) {
+      setActionNotice(`Top-up failed: ${errText(e)}`);
+    } finally {
+      setFundingBusy(false);
+    }
+  }
+
+  return <>
+    <div className="page-heading">
+      <PageHead eyebrow="SELLER WORKSPACE" title="Delivery overview" text="Current order records, delivery claims, and reward budget status." />
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <button className="button subtle" onClick={() => setTopUpModal(true)}>
+          <CreditCard size={15} style={{ marginRight: '6px' }} /> Top Up Budget
+        </button>
+        <Link className="button primary" to="/orders/new">
+          <Plus size={15} style={{ marginRight: '4px' }} /> Create an order / Dual QR
+        </Link>
+      </div>
+    </div>
+
+    {actionNotice && <p className="notice" role="status" style={{ marginBottom: '16px' }}>{actionNotice}</p>}
+
+    <ResourceState {...resource} retry={resource.reload} label="overview" />
+
+    {data && <>
+      {/* Top Funding & Stats Bar */}
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+        <Stat label="Total orders" value={data.totalOrders} sub="All time records" />
+        <Stat label="Out for delivery" value={data.statusCounts.OUT_FOR_DELIVERY || 0} sub="In transit / dispatched" />
+        <Stat label="Verified deliveries" value={data.statusCounts.DELIVERED_VERIFIED || 0} sub="OTP confirmed completions" />
+        <Stat label="Returned to seller" value={data.statusCounts.RETURNED_TO_SELLER || 0} sub="Recorded returns" />
+        <Stat
+          label="Reward Budget (Available)"
+          value={money(funding?.availablePaise || 0)}
+          sub={`Reserved: ${money(funding?.reservedPaise || 0)}`}
+        />
+      </div>
+
+      {/* Pending Delivery Claims Banner */}
+      {claims.length > 0 && (
+        <section className="panel" style={{ background: '#fdfaf2', border: '1px solid #ebd9b0', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#875a00', fontWeight: 700, marginBottom: '8px' }}>
+            <AlertCircle size={18} />
+            <span>PENDING DELIVERY CLAIMS ({claims.length})</span>
+          </div>
+          <p className="muted" style={{ margin: '0 0 12px' }}>
+            Delivery personnel have requested assignment for the following out-for-delivery packages. Review and approve to grant handoff authorization.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Order Ref</th>
+                  <th>Courier Partner</th>
+                  <th>Claimed At</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {claims.map(claim => (
+                  <tr key={claim.id}>
+                    <td><b>{claim.order?.sellerReference || claim.orderId}</b></td>
+                    <td>{claim.deliveryUser?.name || 'Courier Rider'} ({claim.deliveryUser?.phone || 'No phone'})</td>
+                    <td>{formatDate(claim.claimedAt)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          className="button primary"
+                          style={{ minHeight: '30px', fontSize: '.78rem', padding: '2px 10px' }}
+                          disabled={claimActionBusy === claim.id}
+                          onClick={() => handleClaimDecision(claim.id, 'APPROVE')}
+                        >
+                          <CheckCircle2 size={12} style={{ marginRight: '4px' }} /> Approve Claim
+                        </button>
+                        <button
+                          className="button subtle"
+                          style={{ minHeight: '30px', fontSize: '.78rem', padding: '2px 10px', color: '#d74032' }}
+                          disabled={claimActionBusy === claim.id}
+                          onClick={() => handleClaimDecision(claim.id, 'REJECT')}
+                        >
+                          <XCircle size={12} style={{ marginRight: '4px' }} /> Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Recent Orders & Quick Actions */}
+      <div className="dashboard-grid">
+        <section className="panel table-panel">
+          <div className="panel-title">
+            <h2>Recent orders</h2>
+            <Link to="/orders">View all orders</Link>
+          </div>
+          <OrdersTable orders={resource.data!.orders.items} />
+        </section>
+
+        <section className="panel">
+          <h2>Next steps & Operations</h2>
+          <div className="quick-links">
+            <Link to="/orders/new">⚡ Instant Dual QR Generator →</Link>
+            <Link to="/returns">Inspect reported return reasons →</Link>
+            <Link to="/reports">Monthly compliance report & CSV →</Link>
+            <Link to="/rewards">Reward ledger: {money(data.rewardTotalPaise)} →</Link>
+          </div>
+          <p className="notice" style={{ marginTop: '16px' }}>
+            ₹5 reward credits are reserved from your funding budget and awarded once an order satisfies customer OTP acceptance and verified handoff.
+          </p>
+        </section>
+      </div>
+
+      <section className="panel">
+        <h2>Orders by confirmed status</h2>
+        <div className="status-summary">
+          {Object.entries(data.statusCounts).map(([status, count]) => (
+            <Link key={status} to={`/orders?status=${encodeURIComponent(status)}`}>
+              <span>{pretty(status)}</span>
+              <b>{count}</b>
+            </Link>
+          ))}
+        </div>
+        {!Object.keys(data.statusCounts).length && <p className="muted">No saved orders yet.</p>}
+        <button className="button subtle" style={{ marginTop: '12px' }} onClick={resource.reload}>
+          Refresh overview
+        </button>
+      </section>
+    </>}
+
+    {/* Top Up Budget Modal */}
+    {topUpModal && (
+      <div className="nav-scrim" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setTopUpModal(false)}>
+        <div className="panel" style={{ width: '90%', maxWidth: '440px', background: '#fff', padding: '24px', borderRadius: '8px' }} onClick={e => e.stopPropagation()}>
+          <div className="eyebrow" style={{ color: 'var(--primary)', fontWeight: 700 }}>RAZORPAY SANDBOX</div>
+          <h3 style={{ margin: '4px 0 12px' }}>Top Up Reward Budget</h3>
+          <p className="muted" style={{ fontSize: '.86rem', margin: '0 0 16px' }}>
+            Add budget to fund ₹5 completion rewards for verified deliveries. In local demo mode, transactions are instantly captured with idempotency.
+          </p>
+          <form onSubmit={handleTopUp}>
+            <label style={{ display: 'block', marginBottom: '16px' }}>
+              <span>Top-Up Amount (INR ₹):</span>
+              <input
+                type="number"
+                min={100}
+                max={50000}
+                step={100}
+                value={topUpAmount}
+                onChange={e => setTopUpAmount(e.target.value)}
+                required
+                style={{ width: '100%', minHeight: '40px', padding: '8px 12px', fontSize: '1.1rem', fontWeight: 600 }}
+              />
+              <small className="field-help">Recommended minimum: ₹500 (covers 80+ deliveries at ₹6 reserve each).</small>
+            </label>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+              <button type="button" className="button subtle" onClick={() => setTopUpModal(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="button primary" disabled={fundingBusy}>
+                {fundingBusy ? 'Processing…' : `Pay ₹${topUpAmount} via Sandbox`}
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+  </>;
 }
 
 export function RewardsPage() {

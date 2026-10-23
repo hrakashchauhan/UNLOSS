@@ -1,12 +1,17 @@
 :root {
-  --surface: #fff;
-  --background: #f8f9fa;
-  --text: #202122;
+  --surface: #ffffff;
+  --surface-warm: #fcfbf9;
+  --background: #f7f6f2;
+  --text: #1d1e1f;
   --muted: #54595d;
-  --line: #dadde3;
-  --primary: #36c;
-  --primary-hover: #3056a9;
-  --green: var(--primary);
+  --line: #dcd9d0;
+  --primary: #005856;
+  --primary-hover: #004644;
+  --primary-active: #003635;
+  --primary-light: #e6f3f3;
+  --primary-border: #99cccc;
+  --green: #1a6840;
+  --green-bg: #e8f5ec;
   color: var(--text);
   background: var(--background);
   font-size: 14px;
@@ -28,7 +33,7 @@ a:hover { text-decoration: underline; }
 .brand-dot { color: var(--primary); }
 .sidebar, .topbar, .panel, .stat-card, .login-card, .public-card { background: var(--surface); border-color: var(--line); }
 .nav-link { color: var(--muted); }
-.nav-link.active { color: var(--primary); background: #e8eeff; }
+.nav-link.active { color: var(--primary); background: var(--primary-light); font-weight: 600; }
 .nav-link:hover { background: #f2f4f8; text-decoration: none; }
 .muted, .workspace-label, .eyebrow, .crumb, .footer { color: var(--muted); }
 .button { font-size: .93rem; min-height: 42px; border-color: var(--line); }
@@ -48,7 +53,7 @@ tbody tr { cursor: default; }
 .pagination button:disabled { color: #72777d; opacity: .65; }
 .pagination span, .pagination small { font-size: .86rem; }
 .error-box { color: #9f3526; border-color: #d74032; font-size: .93rem; }
-.notice { background: #e8eeff; color: #233566; line-height: 1.5; font-size: .93rem; }
+.notice { background: var(--primary-light); color: var(--primary-active); line-height: 1.5; font-size: .93rem; border-left: 3px solid var(--primary); }
 .token-card a { overflow-wrap: anywhere; font-size: .86rem; }
 .token-card [role="status"] { min-height: 1.3rem; font-size: .86rem; }
 .recovery-screen { min-height: 100vh; max-width: 38rem; margin: auto; padding: 6rem 1.5rem; }
