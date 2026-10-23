@@ -49,6 +49,10 @@ model Order {
   state           String
   postalCode      String
   status          String         @default("CREATED")
+  deliveryAttempt Int            @default(0)
+  acceptedAttempt Int?
+  acceptedUntil   DateTime?
+  acceptedChallengeId String?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
   seller          Seller         @relation(fields: [sellerId], references: [id])
@@ -101,6 +105,8 @@ model OtpChallenge {
   verificationHash      String?
   expiresAt             DateTime
   attempts              Int       @default(0)
+  deliveryAttempt       Int       @default(-1)
+  consumedAt            DateTime?
   verifiedAt            DateTime?
   verificationExpiresAt DateTime?
   createdAt             DateTime  @default(now())

@@ -6,7 +6,9 @@ import type { Config } from './config.js';
 import { currentSeller, requireSeller } from './auth.js';
 import { err } from './http.js';
 import { hashToken } from './rules.js';
-import { assertTransition, lockOrder, pagination, paginationSchema, reasonFields, statuses } from './domain.js';
+import { lockOrder, pagination, paginationSchema, reasonFields, statuses } from './domain.js';
+
+import { changeStatus } from './workflow.js';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 export const createOrderSchema = z.object({
@@ -72,11 +74,7 @@ export function registerOrderRoutes(app: Express, prisma: PrismaClient, config: 
     const result = await prisma.$transaction(async tx => {
       const before = await lockOrder(tx, String(req.params.id), sellerId);
       if (!sellerTargets.has(v.toStatus)) throw err('FORBIDDEN', 'This outcome requires the verified delivery/customer workflow', 403);
-      assertTransition(before.status, v.toStatus);
-      const order = await tx.order.update({ where: { id: before.id, sellerId }, data: { status: v.toStatus } });
-      const event = await tx.orderEvent.create({ data: { orderId: order.id, eventType: v.toStatus, fromStatus: before.status, toStatus: v.toStatus, actorType: 'SELLER', actorId: sellerId, reasonCode: v.reasonCode, note: v.note, source: config.demo ? 'DEMO' : 'MANUAL' } });
-      if (v.toStatus === 'CANCELLED') await tx.qrToken.updateMany({ where: { orderId: order.id }, data: { revokedAt: new Date() } });
-      return { order, event };
+      return changeStatus(tx, before, v.toStatus, { eventType: v.toStatus, actorType: 'SELLER', actorId: sellerId, reasonCode: v.reasonCode, note: v.note, source: config.demo ? 'DEMO' : 'MANUAL' });
     });
     res.json(result);
   });
