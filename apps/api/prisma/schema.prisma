@@ -1,0 +1,129 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Seller {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  name          String
+  createdAt     DateTime       @default(now())
+  orders        Order[]
+  sessions      Session[]
+  ledger        LedgerEntry[]
+  notifications Notification[]
+}
+
+model Session {
+  sid       String   @id
+  sellerId  String
+  data      Json
+  expiresAt DateTime
+  seller    Seller   @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+}
+
+model Order {
+  id              String         @id @default(cuid())
+  sellerId        String
+  sellerReference String?
+  customerName    String
+  customerPhone   String
+  addressLine1    String
+  addressLine2    String?
+  city            String
+  state           String
+  postalCode      String
+  status          String         @default("CREATED")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  seller          Seller         @relation(fields: [sellerId], references: [id])
+  events          OrderEvent[]
+  tokens          QrToken[]
+  challenges      OtpChallenge[]
+  ledger          LedgerEntry[]
+
+  @@index([sellerId, status])
+  @@index([sellerId, createdAt])
+}
+
+model OrderEvent {
+  id         String   @id @default(cuid())
+  orderId    String
+  eventType  String
+  fromStatus String?
+  toStatus   String?
+  actorType  String
+  actorId    String?
+  reasonCode String?
+  note       String?
+  source     String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([createdAt, eventType])
+}
+
+model QrToken {
+  id        String    @id @default(cuid())
+  orderId   String
+  purpose   String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  order     Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, purpose])
+}
+
+model OtpChallenge {
+  id                    String    @id @default(cuid())
+  orderId               String
+  customerTokenId       String
+  codeHash              String
+  verificationHash      String?
+  expiresAt             DateTime
+  attempts              Int       @default(0)
+  verifiedAt            DateTime?
+  verificationExpiresAt DateTime?
+  createdAt             DateTime  @default(now())
+  order                 Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([customerTokenId, createdAt])
+}
+
+model LedgerEntry {
+  id                String   @id @default(cuid())
+  sellerId          String
+  orderId           String
+  amountPaise       Int
+  currency          String   @default("INR")
+  type              String
+  eligibilityReason String
+  createdAt         DateTime @default(now())
+  seller            Seller   @relation(fields: [sellerId], references: [id])
+  order             Order    @relation(fields: [orderId], references: [id])
+
+  @@unique([orderId, type])
+  @@index([sellerId, createdAt])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  sellerId  String
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+  seller    Seller   @relation(fields: [sellerId], references: [id])
+
+  @@index([sellerId, createdAt])
+}
