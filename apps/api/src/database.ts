@@ -3,6 +3,8 @@ import type { Config } from './config.js';
 
 export function createDatabase(config: Config) {
   const url = new URL(config.databaseUrl);
+  // Keep rolling deployments within the shared session pooler's connection budget.
+  if (!url.searchParams.has('connection_limit')) url.searchParams.set('connection_limit', '3');
   // Bound connection/query wait times; never print this URL or Prisma errors.
   if (!url.searchParams.has('connect_timeout')) url.searchParams.set('connect_timeout', '5');
   if (!url.searchParams.has('pool_timeout')) url.searchParams.set('pool_timeout', '5');

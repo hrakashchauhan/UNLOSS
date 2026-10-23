@@ -68,9 +68,13 @@ async function main() {
     process.once('SIGINT', shutdown);
     process.once('SIGTERM', shutdown);
   } catch (error) {
+    const databaseCode = error && typeof error === 'object'
+      ? ('errorCode' in error ? error.errorCode : 'code' in error ? error.code : undefined)
+      : undefined;
     logger.error('server.start_failed', error instanceof ConfigurationError
       ? { code: 'CONFIGURATION_INVALID', fields: error.fields }
-      : { code: error instanceof ProductionNotReadyError ? 'PRODUCTION_NOT_READY' : 'STARTUP_FAILED' });
+      : { code: error instanceof ProductionNotReadyError ? 'PRODUCTION_NOT_READY'
+        : typeof databaseCode === 'string' && /^P\d{4}$/.test(databaseCode) ? databaseCode : 'STARTUP_FAILED' });
     process.exitCode = 1;
   }
 }
