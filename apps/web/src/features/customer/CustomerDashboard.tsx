@@ -18,6 +18,7 @@ import {
 import { api, type Order } from '../../api';
 import { ErrorBox, errText } from '../../ui/common';
 import { useAuth } from '../auth/Auth';
+import { LiveIndicator } from '../../ui/LiveIndicator';
 
 export function CustomerDashboard() {
   const { user, mode, signOut, switchRole } = useAuth();
@@ -63,6 +64,7 @@ export function CustomerDashboard() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <LiveIndicator onLiveEvent={() => void loadCustomerOrders()} />
             {mode === 'demo' && (
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button className="button" style={{ minHeight: '34px', fontSize: '.8rem', padding: '4px 10px' }} onClick={() => switchRole('SELLER')}>

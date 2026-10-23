@@ -181,6 +181,7 @@ export function DeliveryDashboard() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <LiveIndicator onLiveEvent={() => void loadData()} />
             {mode === 'demo' && (
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button className="button" style={{ minHeight: '34px', fontSize: '.8rem', padding: '4px 10px' }} onClick={() => switchRole('SELLER')}>

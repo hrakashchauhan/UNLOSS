@@ -43,6 +43,8 @@ This contract is the shared interface for `apps/web` and `apps/api`. The product
 | `POST /seller/funding/checkout` | SELLER | `{amountPaise}` | 200 `{provider, providerOrderId, ...}` |
 | `POST /seller/funding/capture` | SELLER | `{providerOrderId, providerPaymentId}` | 200 `{status: 'CAPTURED', transaction}` |
 | `POST /orders/:id/fund-reserve` | SELLER | none | 201 `{reservation}` |
+| `GET /events/live` | Any Authenticated | `Last-Event-ID` header/param | 200 SSE `text/event-stream` with heartbeat |
+| `GET /events/poll` | Any Authenticated | `?since=<ISO_TIMESTAMP>` | 200 `{items: OrderEvent[], timestamp}` |
 
 ## Shared enums and lifecycle
 

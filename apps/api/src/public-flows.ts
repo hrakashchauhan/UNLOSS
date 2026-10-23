@@ -30,7 +30,7 @@ export function registerPublicRoutes(app: Express, prisma: PrismaClient, config:
     const t = await getQrToken(prisma, String(req.params.token), 'CUSTOMER');
     res.json({ ...publicOrder(t.order), mode: config.demo ? 'demo' : 'manual', allowedActions: customerActions(t.order.status) });
   });
-  app.post('/api/customer/:token/request-otp', async (req, res) => {
+  const requestOtpHandler = async (req: any, res: any) => {
     const result = await prisma.$transaction(async tx => {
       const t = await lockedToken(tx, String(req.params.token), 'CUSTOMER');
       if (!config.demo) throw err('OTP_PROVIDER_UNAVAILABLE', 'No OTP provider is configured', 503);
@@ -48,8 +48,11 @@ export function registerPublicRoutes(app: Express, prisma: PrismaClient, config:
       return { challengeId: id, expiresAt, devCode: code, demoLabel: 'DEMO TEST OTP — no SMS sent' };
     });
     res.status(202).json(result);
-  });
-  app.post('/api/customer/:token/verify-otp', async (req, res) => {
+  };
+  app.post('/api/customer/:token/request-otp', requestOtpHandler);
+  app.post('/api/customer/:token/otp', requestOtpHandler);
+
+  const verifyOtpHandler = async (req: any, res: any) => {
     await getQrToken(prisma, String(req.params.token), 'CUSTOMER');
     const v = z.object({ challengeId: z.string().min(1).max(100), code: z.string().regex(/^\d{6}$/) }).parse(req.body);
     const result = await prisma.$transaction(async tx => {
@@ -67,13 +70,16 @@ export function registerPublicRoutes(app: Express, prisma: PrismaClient, config:
     });
     if (!result) throw err('OTP_INVALID', 'OTP is invalid or expired', 400);
     res.json(result);
-  });
+  };
+  app.post('/api/customer/:token/verify-otp', verifyOtpHandler);
+  app.post('/api/customer/:token/otp/verify', verifyOtpHandler);
+
   app.post('/api/customer/:token/decision', async (req, res) => {
     await getQrToken(prisma, String(req.params.token), 'CUSTOMER');
-    const proof = req.get('X-Customer-Verification');
+    const proof = req.get('X-Customer-Verification') || (req.body && typeof req.body.verificationToken === 'string' ? req.body.verificationToken : undefined);
     if (!proof) throw err('VERIFICATION_REQUIRED', 'OTP verification required', 401);
     if (!/^[A-Za-z0-9_-]{43}$/.test(proof)) throw err('VERIFICATION_INVALID', 'Verification is invalid or expired', 401);
-    const v = z.object({ action: z.enum(['ACCEPT','REJECT','REQUEST_REDELIVERY']), ...reasonFields }).parse(req.body);
+    const v = z.object({ action: z.enum(['ACCEPT','REJECT','REQUEST_REDELIVERY']), verificationToken: z.string().optional(), ...reasonFields }).parse(req.body);
     if (v.action === 'REJECT' && !v.reasonCode) throw err('REASON_REQUIRED', 'Reject requires a reason', 400);
     const result = await prisma.$transaction(async tx => {
       const t = await lockedToken(tx, String(req.params.token), 'CUSTOMER'), now = new Date();

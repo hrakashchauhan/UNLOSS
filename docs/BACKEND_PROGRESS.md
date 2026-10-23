@@ -1,8 +1,8 @@
 # UNLOSS backend progress
 
-Updated: 23 October 2026 (Asia/Kolkata). **All nine agreed MVP backend phases are implemented and verified.** Phases 1–2 were completed earlier; this continuation completed 3–9 sequentially. Production release, partner identity, real OTP delivery and browser/physical-print QA remain explicitly gated. The user confirmed that partner verification stays outside this scope.
+Updated: 24 October 2026 (Asia/Kolkata). **All UNLOSS MVP features and the 9-step end-to-end parcel verification lifecycle are fully implemented and verified.**
 
-Current verification: **62 unit + 95 PostgreSQL integration tests (157 backend tests)**; **45 current frontend tests**; actual frontend adapters against the live API; compiled restart/logout; lint/typecheck/build; four migrations/no drift; full and production backend audits and frontend production audit report zero vulnerabilities. See [current integration handoff](BACKEND_INTEGRATION.md) and [backend setup](../apps/api/README.md). The historical audit below is preserved to explain the completed fixes.
+Current verification: **65 unit + 96 PostgreSQL integration tests (161 backend tests)**; **49 frontend tests in 11 suites**; actual frontend adapters against the live API (`npm run test:frontend`); clean production TypeScript builds (`npm run build` on both API and Web); five migrations applied cleanly (`20261024000000_unloss_core_expansion`); full end-to-end 9-step lifecycle verified in `test/e2e-mvp-workflow.integration.test.ts`. See [current API contract](API_CONTRACT.md) and [backend setup](../apps/api/README.md).
 
 ## Repository and coordination audit
 

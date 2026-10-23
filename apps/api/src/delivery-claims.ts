@@ -2,7 +2,7 @@ import type { Express } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import type { Config } from './config.js';
-import { currentUser, requireAnySession, requireRole } from './auth.js';
+import { currentSeller, currentUser, requireAnySession, requireRole, requireSeller } from './auth.js';
 import { err } from './http.js';
 import { lockOrder } from './domain.js';
 import { broadcastLiveEvent } from './live-events.js';
@@ -12,7 +12,7 @@ const retentionDays = 30;
 export function registerDeliveryClaimRoutes(app: Express, prisma: PrismaClient, config: Config) {
   const auth = requireAnySession(prisma, config);
   const deliveryOnly = [auth, requireRole(['DELIVERY'])];
-  const sellerOnly = [auth, requireRole(['SELLER'])];
+  const sellerOnly = [requireSeller(prisma, config)];
   const adminOnly = [auth, requireRole(['ADMIN'])];
 
   app.get('/api/delivery/pending', ...deliveryOnly, async (req, res) => {
@@ -51,21 +51,41 @@ export function registerDeliveryClaimRoutes(app: Express, prisma: PrismaClient, 
   });
 
   app.get('/api/seller/claims', ...sellerOnly, async (req, res) => {
-    const seller = res.locals.seller;
+    const seller = currentSeller(res);
     const claims = await prisma.parcelClaim.findMany({ where: { order: { sellerId: seller.id }, status: 'PENDING' }, include: { order: true, deliveryUser: true }, orderBy: { claimedAt: 'asc' } });
     res.json({ items: claims });
   });
 
   app.post('/api/seller/claims/:id/decide', ...sellerOnly, async (req, res) => {
-    const seller = res.locals.seller;
+    const seller = currentSeller(res);
     const v = z.object({ action: z.enum(['APPROVE', 'REJECT']), reason: z.string().trim().max(500).optional() }).parse(req.body);
     if (v.action === 'REJECT' && !v.reason) throw err('REASON_REQUIRED', 'Rejection reason required', 400);
     const result = await prisma.$transaction(async tx => {
       const claim = await tx.parcelClaim.findFirst({ where: { id: String(req.params.id), status: 'PENDING', order: { sellerId: seller.id } }, include: { order: true } });
       if (!claim) throw err('NOT_FOUND', 'Claim not found', 404);
-      await tx.parcelClaim.update({ where: { id: claim.id }, data: { status: v.action === 'APPROVE' ? 'APPROVED' : 'REJECTED', decidedAt: new Date(), decidedBy: seller.id, rejectionReason: v.reason || null } });
-      await tx.orderEvent.create({ data: { orderId: claim.orderId, eventType: v.action === 'APPROVE' ? 'CLAIM_APPROVED' : 'CLAIM_REJECTED', toStatus: claim.order.status, actorType: 'SELLER', actorId: seller.id, reasonCode: v.reason ? 'OTHER' : null, note: v.reason || null, source: config.demo ? 'DEMO' : 'MANUAL' } });
-      return claim;
+      const sellerRecord = await tx.seller.findUnique({ where: { id: seller.id }, select: { userId: true } });
+      const updated = await tx.parcelClaim.update({
+        where: { id: claim.id },
+        data: {
+          status: v.action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+          decidedAt: new Date(),
+          decidedBy: sellerRecord?.userId || null,
+          rejectionReason: v.reason || null,
+        },
+      });
+      await tx.orderEvent.create({
+        data: {
+          orderId: claim.orderId,
+          eventType: v.action === 'APPROVE' ? 'CLAIM_APPROVED' : 'CLAIM_REJECTED',
+          toStatus: claim.order.status,
+          actorType: 'SELLER',
+          actorId: seller.id,
+          reasonCode: v.reason ? 'OTHER' : null,
+          note: v.reason || null,
+          source: config.demo ? 'DEMO' : 'MANUAL',
+        },
+      });
+      return updated;
     });
     broadcastLiveEvent({
       id: `decision-${result.id}`,

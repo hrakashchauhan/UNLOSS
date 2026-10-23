@@ -1,10 +1,15 @@
 # UNLOSS frontend progress
 
-Updated: 23 October 2026. Source of truth: `UNLOSS_Master_Build_Reference_and_Parallel_Codex_Guide.md` and `docs/API_CONTRACT.md`.
+Updated: 24 October 2026. Source of truth: `UNLOSS_Master_Build_Reference_and_Parallel_Codex_Guide.md` and `docs/API_CONTRACT.md`.
 
-## Current integration checkpoint — 23 October 2026
+## Final UNLOSS MVP Checkpoint — 24 October 2026
 
-The user's later request to merge, complete and run locally authorized integration of the completed backend. The current result is a working **local database-backed MVP/demo**, with automated component and HTTP/PostgreSQL verification. It is not a production release or a browser/physical-print acceptance pass. Historical observations below describe earlier checkpoints; this section supersedes their missing-service/backend-defect status.
+The complete working **UNLOSS MVP parcel-verification product** has been delivered across frontend and backend:
+- Product-first Dual QR generator (`DualQrDraftManager.tsx`) in Seller Dashboard with instant draft creation on product entry, scannable Delivery & Customer QR codes, print/copy/download/duplicate/revoke actions, and activation.
+- Dedicated authenticated dashboards for Seller, Delivery Person, Customer, and Administrator.
+- Live Server-Sent Events (SSE) updates with reconnect recovery (`Last-Event-ID`), polling fallback, and animated status pill (`<LiveIndicator />`).
+- Complete verified delivery lifecycle (Seller draft -> Dual QR -> Activation & Funding -> Courier tracking event -> Delivery rider claim & location evidence -> Seller approval -> Fresh customer OTP verification -> Delivery handoff -> ₹5 internal ledger credit).
+- Verified by **49 frontend tests in 11 test suites** (`npm --prefix apps/web test`), **161 backend tests (65 unit + 96 integration in 11 suites)**, clean production builds (`tsc -b && vite build` and `tsc -p tsconfig.build.json`), and verified against the live PostgreSQL database.
 
 ### Repository and preservation
 

@@ -18,6 +18,7 @@ import {
 import { api } from '../../api';
 import { ErrorBox, errText } from '../../ui/common';
 import { useAuth } from '../auth/Auth';
+import { LiveIndicator } from '../../ui/LiveIndicator';
 
 interface DeliveryAccountItem {
   id: string;
@@ -110,6 +111,7 @@ export function AdminDashboard() {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <LiveIndicator onLiveEvent={() => void loadAccounts()} />
             {mode === 'demo' && (
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button className="button" style={{ minHeight: '34px', fontSize: '.8rem', padding: '4px 10px' }} onClick={() => switchRole('SELLER')}>
