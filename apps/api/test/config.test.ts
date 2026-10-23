@@ -38,6 +38,14 @@ describe('configuration', () => {
     expect(() => assertRuntimeSupported(testConfig({ NODE_ENV: 'production', APP_ORIGIN: 'https://unloss.example' })))
       .toThrow('Production serving is disabled');
   });
+  it('requires deliberate cloud configuration before production can start', () => {
+    const env = { NODE_ENV: 'production', APP_ORIGIN: 'https://unloss.example', PRODUCTION_ENABLED: 'true', API_HOST: '0.0.0.0', TRUST_PROXY_HOPS: '1', PORT: '10000' };
+    const config = testConfig(env);
+    expect(config.port).toBe(10000);
+    expect(() => assertRuntimeSupported(config)).not.toThrow();
+    expect(() => assertRuntimeSupported(testConfig({ ...env, TRUST_PROXY_HOPS: '0' }))).toThrow();
+    expect(() => testConfig({ ...env, DEMO_MODE: 'true' })).toThrow();
+  });
 });
 
 describe('demo seed configuration', () => {

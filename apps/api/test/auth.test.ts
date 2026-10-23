@@ -21,6 +21,7 @@ describe('authentication failure handling', () => {
     prisma = new PrismaClient();
     vi.spyOn(prisma, '$queryRaw').mockResolvedValue([{ hits: 1, resetAt: new Date(Date.now() + 60_000) }]);
     vi.spyOn(prisma.seller, 'findUnique').mockResolvedValue(seller);
+    vi.spyOn(prisma.user, 'findFirst').mockResolvedValue(null);
     vi.spyOn(prisma.session, 'create').mockResolvedValue({ sid: 'hashed-id', sellerId: seller.id, userId: null, data: {}, expiresAt: new Date(Date.now() + SESSION_TTL_MS) });
     vi.spyOn(prisma.session, 'count').mockResolvedValue(1);
     vi.spyOn(prisma.session, 'deleteMany').mockResolvedValue({ count: 1 });
@@ -32,6 +33,16 @@ describe('authentication failure handling', () => {
   });
   afterEach(async () => { await server.close(); await prisma.$disconnect(); vi.restoreAllMocks(); });
   const loginBody = () => JSON.stringify({ email: seller.email, password });
+  it('rejects simulated Google identity and disables test OTP outside demo mode', async () => {
+    const google = await fetch(`${server.url}/api/auth/google`, { method: 'POST', headers, body: JSON.stringify({ email: seller.email, name: 'Impersonator' }) });
+    expect(google.status).toBe(400);
+    for (const path of ['otp-request', 'otp-login']) {
+      const otp = await fetch(`${server.url}/api/auth/phone/${path}`, { method: 'POST', headers, body: JSON.stringify({ phone: '+15555550123', code: '123456' }) });
+      expect(otp.status).toBe(503);
+      expect(await otp.text()).not.toContain('devCode');
+    }
+    expect(prisma.session.create).not.toHaveBeenCalled();
+  });
   async function loginCookie() {
     const response = await fetch(`${server.url}/api/auth/login`, { method: 'POST', headers, body: loginBody() });
     expect(response.status).toBe(200);

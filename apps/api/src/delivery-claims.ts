@@ -17,6 +17,13 @@ export function registerDeliveryClaimRoutes(app: Express, prisma: PrismaClient, 
 
   app.get('/api/delivery/pending', ...deliveryOnly, async (req, res) => {
     const user = currentUser(res)!;
+    if (!config.demo) {
+      const profile = await prisma.deliveryProfile.findUnique({ where: { userId: user.id } });
+      if (profile?.reviewStatus !== 'APPROVED') throw err('FORBIDDEN', 'Delivery account requires review', 403);
+      const orders = await prisma.order.findMany({ where: { status: 'OUT_FOR_DELIVERY', claims: { some: { deliveryUserId: user.id, status: 'APPROVED' } } }, include: { shipment: true }, take: 50 });
+      res.json({ items: orders });
+      return;
+    }
     const orders = await prisma.order.findMany({ where: { status: 'OUT_FOR_DELIVERY', claims: { none: { deliveryUserId: user.id, status: { in: ['PENDING', 'APPROVED'] } } } }, include: { shipment: true }, take: 50, orderBy: { createdAt: 'desc' } });
     res.json({ items: orders });
   });
@@ -52,7 +59,7 @@ export function registerDeliveryClaimRoutes(app: Express, prisma: PrismaClient, 
 
   app.get('/api/seller/claims', ...sellerOnly, async (req, res) => {
     const seller = currentSeller(res);
-    const claims = await prisma.parcelClaim.findMany({ where: { order: { sellerId: seller.id }, status: 'PENDING' }, include: { order: true, deliveryUser: true }, orderBy: { claimedAt: 'asc' } });
+    const claims = await prisma.parcelClaim.findMany({ where: { order: { sellerId: seller.id }, status: 'PENDING' }, include: { order: true, deliveryUser: { select: { id: true, name: true, email: true } } }, orderBy: { claimedAt: 'asc' } });
     res.json({ items: claims });
   });
 
@@ -99,7 +106,7 @@ export function registerDeliveryClaimRoutes(app: Express, prisma: PrismaClient, 
   });
 
   app.get('/api/admin/delivery-accounts', ...adminOnly, async (_req, res) => {
-    const items = await prisma.deliveryProfile.findMany({ include: { user: true }, orderBy: { createdAt: 'asc' } });
+    const items = await prisma.deliveryProfile.findMany({ include: { user: { select: { id: true, name: true, email: true } } }, orderBy: { createdAt: 'asc' } });
     res.json({ items });
   });
 

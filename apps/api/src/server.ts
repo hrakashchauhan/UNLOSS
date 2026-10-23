@@ -21,7 +21,7 @@ export async function startServer(config: Config, logger: Logger, prisma: Prisma
       // Local/manual MVP only; deployment and partner/provider integration remain gated.
       const listener = createServer(app);
       listener.once('error', reject);
-      listener.listen(config.port, '127.0.0.1', () => resolve(listener));
+      listener.listen(config.port, config.host, () => resolve(listener));
     });
     server.requestTimeout = 30_000;
     server.headersTimeout = 10_000;

@@ -3,6 +3,11 @@ import { z } from 'zod';
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   API_PORT: z.coerce.number().int().min(1).max(65535).default(3001),
+  PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  API_HOST: z.enum(['127.0.0.1', '0.0.0.0']).default('127.0.0.1'),
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(1).default(0),
+  PRODUCTION_ENABLED: z.enum(['true', 'false']).default('false'),
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   APP_ORIGIN: z.string().default('http://localhost:5173').refine(value => {
     try {
       const url = new URL(value);
@@ -42,7 +47,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
   if (!result.success) throw new ConfigurationError([...new Set(result.error.issues.map(issue => String(issue.path[0])))]);
   return Object.freeze({
     nodeEnv: result.data.NODE_ENV,
-    port: result.data.API_PORT,
+    port: result.data.PORT ?? result.data.API_PORT,
+    host: result.data.API_HOST,
+    trustProxyHops: result.data.TRUST_PROXY_HOPS,
+    productionEnabled: result.data.PRODUCTION_ENABLED === 'true',
+    googleClientId: result.data.GOOGLE_CLIENT_ID,
     appOrigin: result.data.APP_ORIGIN,
     databaseUrl: result.data.DATABASE_URL,
     sessionSecret: result.data.SESSION_SECRET,
@@ -58,8 +67,8 @@ export class ProductionNotReadyError extends Error {
 }
 
 export function assertRuntimeSupported(config: Config) {
-  // MVP workflows are tested. Deployment, real OTP and partner integration remain gated.
-  if (config.nodeEnv === 'production') {
+  // Explicit cloud opt-in; unavailable provider routes independently fail closed.
+  if (config.nodeEnv === 'production' && (!config.productionEnabled || config.demo || config.host !== '0.0.0.0' || config.trustProxyHops !== 1)) {
     throw new ProductionNotReadyError();
   }
 }

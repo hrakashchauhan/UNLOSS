@@ -17,12 +17,13 @@ export function registerFundingRoutes(app: Express, prisma: PrismaClient, config
       prisma.fundingAccount.findUnique({ where: { sellerId } }),
       prisma.fundingTransaction.findMany({ where: { sellerId }, orderBy: { createdAt: 'desc' }, take: 20 }),
       prisma.budgetReservation.findMany({ where: { sellerId }, include: { order: true }, orderBy: { createdAt: 'desc' } }),
-      prisma.deliveryEarning.findMany({ where: { sellerId }, include: { order: true, deliveryUser: true }, orderBy: { createdAt: 'desc' }, take: 30 }),
+      prisma.deliveryEarning.findMany({ where: { sellerId }, include: { order: true, deliveryUser: { select: { id: true, name: true, email: true } } }, orderBy: { createdAt: 'desc' }, take: 30 }),
     ]);
     res.json({ account: account || { availablePaise: 0, reservedPaise: 0, refundedPaise: 0 }, txns, reservations, earnings });
   });
 
   app.post('/api/seller/funding/checkout', sellerAuth, async (req, res) => {
+    if (!config.demo) throw err('PROVIDER_UNAVAILABLE', 'Verified payment processing is not configured', 503);
     const sellerId = currentSeller(res).id;
     const v = z.object({ amountPaise: z.coerce.number().int().min(500).max(10000000) }).parse(req.body);
     const feePaise = Math.ceil(v.amountPaise * 0.02);
@@ -36,6 +37,7 @@ export function registerFundingRoutes(app: Express, prisma: PrismaClient, config
   });
 
   app.post('/api/seller/funding/capture', sellerAuth, async (req, res) => {
+    if (!config.demo) throw err('PROVIDER_UNAVAILABLE', 'Verified payment processing is not configured', 503);
     const sellerId = currentSeller(res).id;
     const v = z.object({ providerOrderId: z.string(), providerPaymentId: z.string() }).parse(req.body);
     const result = await prisma.$transaction(async tx => {

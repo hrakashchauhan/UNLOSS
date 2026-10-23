@@ -4,6 +4,7 @@ import { ShieldCheck, Truck, Store, UserCheck, Smartphone, Mail, ArrowRight, Che
 import { ApiError, api, registerSellerSessionExpired, type Seller } from '../../api';
 import { ErrorBox, errText } from '../../ui/common';
 import { DEMO_ENABLED } from '../../config';
+import { GoogleSignIn } from './GoogleSignIn';
 
 export interface AuthUser {
   id: string;
@@ -25,7 +26,7 @@ export interface AuthContextValue {
   restore: (signal?: AbortSignal) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   register: (payload: any) => Promise<void>;
-  signInWithGoogle: (email: string, name: string, role?: UserRole) => Promise<void>;
+  signInWithGoogle: (credential: string, role?: UserRole) => Promise<void>;
   requestPhoneOtp: (phone: string) => Promise<{ challengeId: string; phone: string; devCode: string; message: string }>;
   verifyPhoneOtp: (phone: string, code: string, role?: UserRole, name?: string) => Promise<void>;
   switchRole: (role: UserRole) => Promise<void>;
@@ -98,10 +99,10 @@ export function AuthProvider() {
     setPhase('authenticated');
   }, []);
 
-  const signInWithGoogle = useCallback(async (email: string, name: string, role: UserRole = 'CUSTOMER') => {
+  const signInWithGoogle = useCallback(async (credential: string, role: UserRole = 'CUSTOMER') => {
     const response = await api<{ seller?: Seller | null; user?: AuthUser | null; mode?: 'demo' | 'manual' }>('/auth/google', {
       method: 'POST',
-      body: JSON.stringify({ email, name, role }),
+      body: JSON.stringify({ credential, role }),
     });
     setSeller(response.seller || null);
     setUser(response.user || null);
@@ -310,14 +311,11 @@ function AuthView({ returnTo }: { returnTo: string }) {
   }
 
   // Handle Google Sign In
-  async function handleGoogleSignIn() {
+  async function handleGoogleSignIn(credential: string) {
     if (pending) return;
     setPending(true); setError('');
     try {
-      // Simulate/trigger Google Auth for the chosen role
-      const googleEmail = `google.${selectedRole.toLowerCase()}@unloss.local`;
-      const googleName = `Google ${selectedRole === 'SELLER' ? 'Merchant' : selectedRole === 'DELIVERY' ? 'Courier' : 'Customer'}`;
-      await signInWithGoogle(googleEmail, googleName, selectedRole);
+      await signInWithGoogle(credential, selectedRole);
       routeUser(selectedRole);
     } catch (cause) { setError(errText(cause)); }
     finally { setPending(false); }
@@ -461,32 +459,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
 
         {/* Google Sign-In Button */}
         <div style={{ marginBottom: '20px' }}>
-          <button
-            type="button"
-            className="button subtle full"
-            onClick={handleGoogleSignIn}
-            disabled={pending}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '10px',
-              fontSize: '13px',
-              fontWeight: 600,
-              minHeight: '42px',
-              borderColor: '#cbd5e1',
-              color: '#1e293b',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-            }}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.15z"/>
-              <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.24v3.15C3.26 21.36 7.33 24 12 24z"/>
-              <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.24C.45 8.15 0 9.92 0 12s.45 3.85 1.24 5.42l4.04-3.15z"/>
-              <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.33 0 3.26 2.64 1.24 6.58l4.04 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
-            </svg>
-            Continue with Google
-          </button>
+          <GoogleSignIn onCredential={handleGoogleSignIn} />
           <div style={{ display: 'flex', alignItems: 'center', margin: '16px 0', color: '#94a3b8', fontSize: '11px' }}>
             <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
             <span style={{ padding: '0 10px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>or with credentials</span>

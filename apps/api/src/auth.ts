@@ -5,6 +5,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { Express, RequestHandler, Response } from 'express';
 import type { Config } from './config.js';
 import { err } from './http.js';
+import { verifyGoogleCredential } from './google-auth.js';
 import { hashToken } from './rules.js';
 import { PrismaSessionStore, SESSION_COOKIE, SESSION_TTL_MS, sessionCookieOptions } from './sessions.js';
 import type { createRateLimits } from './rate-limits.js';
@@ -50,7 +51,7 @@ export function requireAnySession(prisma: PrismaClient, config: Config): Request
       }
       if (req.session?.userId && req.session.sessionExpiresAt && req.session.sessionExpiresAt > Date.now()) {
         const user = await prisma.user.findUnique({ where: { id: req.session.userId }, include: { memberships: true } });
-        if (user) {
+        if (user && user.status === 'ACTIVE' && hashToken(user.passwordHash || 'google-session') === req.session.credentialVersion) {
           res.locals.authUser = { id: user.id, name: user.name, email: user.email, phone: user.phone, roles: user.memberships.filter(m => m.status === 'ACTIVE').map(m => m.role) } satisfies AuthUser;
         }
       }
@@ -217,8 +218,8 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
               create: {
                 employer: v.employer || 'Independent Courier',
                 deliveryReference: v.deliveryReference || `REF-${randomBytes(4).toString('hex').toUpperCase()}`,
-                reviewStatus: 'APPROVED',
-                phoneVerifiedAt: new Date(),
+                reviewStatus: config.demo ? 'APPROVED' : 'PENDING',
+                phoneVerifiedAt: config.demo ? new Date() : null,
               },
             },
           } : {}),
@@ -266,7 +267,8 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
       await store.issue(req.sessionID, req.session);
       await new Promise<void>((resolve, reject) => req.session.save(error => error ? reject(error) : resolve()));
     } catch {
-      // Session save error shouldn't crash successful account creation
+      if (req.session) await new Promise<void>(resolve => req.session.destroy(() => resolve()));
+      throw err('SESSION_UNAVAILABLE', 'Account created, but sign-in failed. Please sign in again.', 503);
     }
 
     res.status(201).json({
@@ -285,36 +287,40 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
 
   // Google Authentication endpoint (OAuth / One-tap sign-in)
   app.post('/api/auth/google', limits.loginIp, async (req, res) => {
-    const v = z.object({
-      email: z.string().trim().toLowerCase().email().max(254),
-      name: z.string().trim().min(1).max(100),
-      googleId: z.string().trim().optional(),
+    const input = z.object({
+      credential: z.string().min(1).max(10000),
       role: z.enum(['SELLER', 'DELIVERY', 'CUSTOMER']).default('CUSTOMER'),
     }).parse(req.body);
+    const identity = await verifyGoogleCredential(input.credential, config.googleClientId);
+    const v = { email: identity.email, name: identity.name, role: input.role };
 
     let user: any = await prisma.user.findUnique({
-      where: { email: v.email },
+      where: { googleSubject: identity.subject },
       include: { memberships: true, deliveryProfile: true },
     });
 
     let seller = await prisma.seller.findUnique({ where: { email: v.email } });
 
     if (!user) {
+      const existingEmail = await prisma.user.findUnique({ where: { email: v.email } });
+      if (existingEmail || seller) throw err('ACCOUNT_LINK_REQUIRED', 'This email already has an account. Sign in with your password.', 409);
       const dummyPassword = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
       user = await prisma.user.create({
         data: {
+          googleSubject: identity.subject,
           name: v.name,
           email: v.email,
           passwordHash: dummyPassword,
           status: 'ACTIVE',
+          ...(v.role === 'SELLER' ? { seller: { create: { email: v.email, name: v.name, passwordHash: dummyPassword } } } : {}),
           memberships: { create: { role: v.role, status: 'ACTIVE' } },
           ...(v.role === 'DELIVERY' ? {
             deliveryProfile: {
               create: {
-                employer: 'Google Partner Courier',
+                employer: 'Not verified',
                 deliveryReference: `GOOG-${randomBytes(4).toString('hex').toUpperCase()}`,
-                reviewStatus: 'APPROVED',
-                phoneVerifiedAt: new Date(),
+                reviewStatus: config.demo ? 'APPROVED' : 'PENDING',
+                phoneVerifiedAt: config.demo ? new Date() : null,
               },
             },
           } : {}),
@@ -326,44 +332,13 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
             },
           } : {}),
         },
-        include: { memberships: true, deliveryProfile: true },
+        include: { memberships: true, deliveryProfile: true, seller: true },
       });
 
-      if (v.role === 'SELLER') {
-        seller = await prisma.seller.create({
-          data: {
-            id: user.id,
-            email: v.email,
-            name: v.name,
-            passwordHash: dummyPassword,
-            userId: user.id,
-          },
-        });
-      }
+      seller = user.seller || null;
     } else {
-      // Ensure the user has the target role membership if not already present
-      const hasRole = user.memberships?.some((m: any) => m.role === v.role && m.status === 'ACTIVE');
-      if (!hasRole) {
-        await prisma.roleMembership.create({
-          data: { userId: user.id, role: v.role, status: 'ACTIVE' },
-        });
-        user = await prisma.user.findUnique({
-          where: { id: user.id },
-          include: { memberships: true, deliveryProfile: true },
-        }) as any;
-      }
-      if (v.role === 'SELLER' && !seller) {
-        const dummyPassword = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
-        seller = await prisma.seller.create({
-          data: {
-            id: user.id,
-            email: user.email || `${user.id}@seller.unloss.local`,
-            name: user.name,
-            passwordHash: dummyPassword,
-            userId: user.id,
-          },
-        });
-      }
+      if (user.status !== 'ACTIVE') throw err('FORBIDDEN', 'Account is not active', 403);
+      seller = await prisma.seller.findFirst({ where: { userId: user.id } });
     }
 
     await new Promise<void>((resolve, reject) => req.session.regenerate(error => error ? reject(error) : resolve()));
@@ -393,6 +368,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
 
   // Phone OTP Send
   app.post('/api/auth/phone/otp-request', limits.loginIp, async (req, res) => {
+    if (!config.demo) throw err('OTP_PROVIDER_UNAVAILABLE', 'SMS verification is not configured', 503);
     const v = z.object({ phone: z.string().trim().min(10).max(20) }).parse(req.body);
     const code = String(randomBytes(3).readUIntBE(0, 3) % 900000 + 100000);
     const codeHash = hashToken(code);
@@ -419,6 +395,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
 
   // Phone OTP Verify & Login
   app.post('/api/auth/phone/otp-login', limits.loginIp, async (req, res) => {
+    if (!config.demo) throw err('OTP_PROVIDER_UNAVAILABLE', 'SMS verification is not configured', 503);
     const v = z.object({
       phone: z.string().trim().min(10).max(20),
       code: z.string().regex(/^\d{6}$/),
@@ -466,8 +443,8 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
               create: {
                 employer: 'Independent Courier',
                 deliveryReference: `PH-${randomBytes(4).toString('hex').toUpperCase()}`,
-                reviewStatus: 'APPROVED',
-                phoneVerifiedAt: new Date(),
+                reviewStatus: config.demo ? 'APPROVED' : 'PENDING',
+                phoneVerifiedAt: config.demo ? new Date() : null,
               },
             },
           } : {}),

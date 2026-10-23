@@ -306,9 +306,9 @@ describe('UNLOSS Final MVP End-to-End Directive Workflow', () => {
     // Verify exact persistent ledger row for this verified order
     const orderLedger = await prisma.ledgerEntry.findMany({ where: { orderId: liveOrderId } });
     expect(orderLedger).toHaveLength(1);
-    expect(orderLedger[0].amountPaise).toBe(500);
-    expect(orderLedger[0].currency).toBe('INR');
-    expect(orderLedger[0].type).toBe('DELIVERY_REWARD');
+    expect(orderLedger[0]!.amountPaise).toBe(500);
+    expect(orderLedger[0]!.currency).toBe('INR');
+    expect(orderLedger[0]!.type).toBe('DELIVERY_REWARD');
 
     // Replay of handoff is rejected (HTTP 404/409 - already completed and token revoked)
     const replayRes = await fetch(`${baseUrl}/api/delivery/${liveDeliveryToken}`, {

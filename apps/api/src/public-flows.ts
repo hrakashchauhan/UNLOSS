@@ -21,6 +21,15 @@ async function lockedToken(tx: Prisma.TransactionClient, raw: string, purpose: Q
 }
 export function registerPublicRoutes(app: Express, prisma: PrismaClient, config: Config) {
   const source = config.demo ? 'DEMO' : 'MANUAL';
+  // Public token mutations require a live identity/provider workflow, which is
+  // not configured in manual mode. Preview routes remain available.
+  app.use(['/api/delivery/:token', '/api/customer/:token'], (req, _res, next) => {
+    if (!config.demo && req.method !== 'GET' && req.method !== 'HEAD') {
+      next(err('PROVIDER_UNAVAILABLE', 'Live delivery authorization and customer SMS verification are not configured', 503));
+      return;
+    }
+    next();
+  });
   app.get('/api/delivery/:token', async (req, res) => {
     const t = await getQrToken(prisma, String(req.params.token), 'DELIVERY');
     const accepted = t.order.acceptedAttempt === t.order.deliveryAttempt && t.order.acceptedUntil && t.order.acceptedUntil > new Date();

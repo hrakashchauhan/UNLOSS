@@ -24,7 +24,7 @@ export function createApp({ config, prisma, logger, isShuttingDown = () => false
   assertRuntimeSupported(config);
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', false);
+  app.set('trust proxy', config.trustProxyHops || false);
   app.use(requestContext(logger));
   app.use(helmet({ referrerPolicy: { policy: 'no-referrer' } }));
   app.use(cors({ origin: config.appOrigin, credentials: true }));

@@ -23,6 +23,7 @@ export function registerShipmentRoutes(app: Express, prisma: PrismaClient, confi
   });
 
   app.post('/api/integrations/aftership/webhook', async (req, res) => {
+    if (!config.demo) throw err('PROVIDER_UNAVAILABLE', 'Verified courier webhooks are not configured', 503);
     // Signed webhook verification to be enforced in production; in local demo we accept structured updates with idempotency
     const v = z.object({ trackingNumber: z.string(), providerShipmentId: z.string().optional(), status: z.string(), message: z.string().optional(), occurredAt: z.string(), providerEventId: z.string() }).parse(req.body);
     const shipment = await prisma.shipment.findFirst({ where: { trackingNumber: v.trackingNumber } });
