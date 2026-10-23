@@ -7,6 +7,7 @@ import { DEMO_ENABLED } from '../../config';
 type AuthPhase = 'checking' | 'authenticated' | 'unauthenticated' | 'error';
 interface AuthContextValue {
   seller: Seller | null;
+  mode: 'demo' | 'manual';
   phase: AuthPhase;
   restore: (signal?: AbortSignal) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -22,14 +23,15 @@ export function useAuth() {
 
 export function AuthProvider() {
   const [seller, setSeller] = useState<Seller | null>(null);
+  const [mode, setMode] = useState<'demo' | 'manual'>('manual');
   const [phase, setPhase] = useState<AuthPhase>('checking');
 
   const restore = useCallback(async (signal?: AbortSignal) => {
     setPhase('checking');
     try {
-      const response = await api<{ seller: Seller }>('/auth/me', { signal });
+      const response = await api<{ seller: Seller; mode?: 'demo' | 'manual' }>('/auth/me', { signal });
       if (!response.seller?.id) throw new ApiError(200, 'INVALID_RESPONSE', 'The server returned an invalid seller session.');
-      if (!signal?.aborted) { setSeller(response.seller); setPhase('authenticated'); }
+      if (!signal?.aborted) { setSeller(response.seller); setMode(response.mode === 'demo' ? 'demo' : 'manual'); setPhase('authenticated'); }
     } catch (error) {
       if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) return;
       setSeller(null);
@@ -45,9 +47,10 @@ export function AuthProvider() {
   }, [restore]);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const response = await api<{ seller: Seller }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+    const response = await api<{ seller: Seller; mode?: 'demo' | 'manual' }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
     if (!response.seller?.id) throw new ApiError(200, 'INVALID_RESPONSE', 'The server returned an invalid seller session.');
     setSeller(response.seller);
+    setMode(response.mode === 'demo' ? 'demo' : 'manual');
     setPhase('authenticated');
   }, []);
 
@@ -58,7 +61,7 @@ export function AuthProvider() {
     setPhase('unauthenticated');
   }, []);
 
-  const value = useMemo(() => ({ seller, phase, restore, signIn, signOut }), [seller, phase, restore, signIn, signOut]);
+  const value = useMemo(() => ({ seller, mode, phase, restore, signIn, signOut }), [seller, mode, phase, restore, signIn, signOut]);
   return <AuthContext.Provider value={value}><Outlet /></AuthContext.Provider>;
 }
 

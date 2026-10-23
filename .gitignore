@@ -7,5 +7,6 @@ coverage/
 !.env.example
 *.log
 .DS_Store
+.local/
 apps/api/prisma/dev.db
 apps/api/prisma/dev.db-journal

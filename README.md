@@ -1,44 +1,73 @@
 # UNLOSS
 
-UNLOSS is a seller-focused parcel delivery verification and return-tracking MVP. The master product reference is [`UNLOSS_Master_Build_Reference_and_Parallel_Codex_Guide.md`](UNLOSS_Master_Build_Reference_and_Parallel_Codex_Guide.md); the current HTTP interface is documented in [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md).
+UNLOSS records seller-owned orders, delivery attempts, customer decisions, returns and redelivery. It includes separate delivery/customer QR codes, an internal ₹5 ledger, notifications and monthly JSON/CSV reports. A QR scan is not proof of physical delivery.
 
-## Requirements
+The frontend and cumulative backend are integrated for a **local, database-backed demo**. Production deployment, real OTP delivery and official delivery-partner verification remain gated. No courier, GPS, SMS or payout integration is claimed.
 
-- A Node.js version supported by the installed Vite release and npm (Node 22.12+ recommended).
-- PostgreSQL 15 or newer.
+Requirements: [master reference](UNLOSS_Master_Build_Reference_and_Parallel_Codex_Guide.md). Interface: [API contract](docs/API_CONTRACT.md). Evidence and remaining work: [frontend progress](docs/FRONTEND_PROGRESS.md), [backend progress](docs/BACKEND_PROGRESS.md), [integration dependencies](docs/BACKEND_DEPENDENCIES.md).
 
-## Local setup
+## This configured workspace
 
-1. Install API dependencies: `npm --prefix apps/api install`.
-2. Copy `apps/api/.env.example` to `apps/api/.env`. Set `DATABASE_URL` to a local PostgreSQL database and replace `SESSION_SECRET` with at least 32 random characters.
-3. Generate Prisma Client and apply the migration: `npm --prefix apps/api run prisma:generate` then `npm --prefix apps/api run db:migrate`.
-4. Seed the development seller: `npm --prefix apps/api run db:seed`.
-5. In one terminal run `npm run dev:api`; in another run `npm --prefix apps/web install` and `npm run dev:web`.
-6. Open the Vite URL (normally `http://localhost:5173`). Local seed login: `demo@unloss.local` / `Demo-Only-Change-Me-2026!`.
+Open **http://127.0.0.1:5173**. The generated seller login is in ignored [local access instructions](.local/LOCAL_ACCESS.txt). That file and apps/api/.env stay on this computer and are never committed. There is no built-in/default password.
 
-On Windows PowerShell, use `npm.cmd` if script execution policy blocks `npm.ps1`. The frontend defaults to `/api`; Vite proxies it to `http://localhost:3001`. Keep `APP_ORIGIN` equal to the exact browser origin used for the frontend (for example, `http://localhost:5173`). For a separately hosted frontend, set `VITE_API_BASE_URL` to the public HTTPS API URL ending in `/api` and configure the API's cookie/CORS origin accordingly. A production web server also needs to forward `/api` and serve `index.html` for frontend routes.
+The API uses port 3001 and the retained PostgreSQL test installation uses port 55432. The separate databases are **unloss_local_demo** for interactive testing and **unloss_test_phase1** for automated tests. A completed **SYNTHETIC-SMOKE-*** order and one 500-paise internal demo credit were retained for inspection. This is not a payout.
 
-`DEMO_MODE=true` enables the development-only OTP disclosure. Keep it disabled outside local development. There is no real courier, SMS/WhatsApp, GPS, or money transfer integration. Rewards are internal ledger entries only.
+If Node services have stopped, with PostgreSQL running, use two terminals from the repository root:
 
-## Commands
+~~~powershell
+npm.cmd run dev:api
+~~~
 
-- `npm run build:api`, `npm run build:web`
-- `npm run typecheck:api`, `npm run typecheck:web`
-- `npm run test:api`
-- `npm.cmd --prefix apps/web test`, `npm.cmd --prefix apps/web run lint`
+~~~powershell
+npm.cmd run dev:web
+~~~
 
-## Notes
+Use the exact 127.0.0.1 URL above to match APP_ORIGIN. Do not start duplicate services on occupied ports. For this machine's PostgreSQL restart command, see ignored .local/START_DATABASE.ps1. The retained database is local test infrastructure, not production hosting.
 
-The frontend and backend are separate npm applications under `apps/`. Configure `APP_ORIGIN` in the API environment to match the Vite origin. For contract details and report calculations, see `docs/API_CONTRACT.md`.
+## Fresh local setup
 
-Frontend work and actual check results are tracked in [`docs/FRONTEND_PROGRESS.md`](docs/FRONTEND_PROGRESS.md). Seller screens now cover order creation/search/filter/pagination/details, returns/redelivery, chronological events, notifications, the internal ledger, and monthly reports/CSV. Creation produces two scannable purpose-specific QR codes and a printable order sheet. Save/print it before leaving: the API exposes those links once and has no reissue endpoint.
+Requirements: Node.js 22.12+ (verified with 24.19), npm and PostgreSQL 15+ (verified with 17.11). Each app has its own lockfile.
 
-Live public links remain read-only until the backend fixes in [`docs/BACKEND_DEPENDENCIES.md`](docs/BACKEND_DEPENDENCIES.md) are complete. Backend source was left unchanged at the user's request. No claim of working production delivery verification or identity verification is made.
+1. Run `npm.cmd --prefix apps/api ci` and `npm.cmd --prefix apps/web ci`.
+2. Create a local PostgreSQL database. Copy apps/api/.env.example to apps/api/.env only if the latter does not already exist. Set DATABASE_URL, a random SESSION_SECRET of at least 32 bytes, and APP_ORIGIN=http://127.0.0.1:5173.
+3. For synthetic local testing set DEMO_MODE=true, choose SEED_SELLER_EMAIL and a non-placeholder SEED_SELLER_PASSWORD of 12–72 UTF-8 bytes. Optionally set SEED_SAMPLE_ORDERS=true for three labelled synthetic orders. Seed reruns preserve existing passwords and order changes.
+4. Run `npm.cmd --prefix apps/api run prisma:generate`, `npm.cmd --prefix apps/api run db:validate`, `npm.cmd --prefix apps/api run db:migrate`, then `npm.cmd --prefix apps/api run db:seed`.
+5. Start both services using the terminal commands above. Sign in with your configured seed credentials.
 
-## Isolated frontend demo
+The frontend defaults to /api; Vite proxies it to http://127.0.0.1:3001 and uses strict port 5173. Both services bind loopback. Every mutating API request requires the exact configured Origin; browser requests supply it. The API refuses NODE_ENV=production while deployment/provider/partner requirements remain incomplete. A successful frontend build does not remove that restriction.
 
-Run `npm.cmd --prefix apps/web ci`, then `npm.cmd --prefix apps/web run dev`, and open `/demo` on the Vite URL. No backend or seller login is required for this **synthetic** preview. Follow the links in one tab: partner consent/contact/evidence/reviewer/activation → customer demo OTP acceptance → delivery outcome. The demo records a simulated ₹5 ledger value after the qualifying handoff. Reset or withdraw consent to delete its in-memory data; refreshing also clears it.
+## Try the persisted workflow
 
-It uses no real identity documents, government IDs, biometric data, SMS, courier integration or payouts. Demo approval cannot authorize live requests. Default production builds hide demo routes; set `VITE_ENABLE_DEMO=true` only for an intentionally labelled demo deployment. `DEMO_MODE` on the backend is a separate setting; neither setting enables real public writes in this frontend.
+1. Sign in → Orders → Create an order using synthetic recipient data.
+2. Save/print the two QR links **before leaving the creation sheet**. Links are shown once; there is no recovery/reissue endpoint.
+3. Open the order and record Ready for Dispatch, then Out for Delivery. Public links become eligible according to backend state.
+4. Open the customer link, request the labelled test OTP, verify it and accept. No SMS is sent. Acceptance alone does not complete delivery.
+5. Open or refresh the delivery link, select Delivered Verified and confirm the demo handoff. The backend checks current acceptance, records the event, closes both links and credits the internal ledger once.
+6. Refresh seller details, rewards, notifications and the monthly report. Export CSV. For returns, use a separate order, record failure/rejection, then permitted return/redelivery steps and reasons.
 
-See [`docs/FRONTEND_QA.md`](docs/FRONTEND_QA.md) for the unexecuted real-browser/integration checklist and [`docs/PARTNER_VERIFICATION_PROPOSAL.md`](docs/PARTNER_VERIFICATION_PROPOSAL.md) for the pending partner contract.
+The customer/delivery pages and seller shell show a **database-backed demo** banner, including on printed seller pages. Local delivery is authorized by a narrowly scoped QR token; it does not authenticate official partner identity. Manual/production public forms remain disabled.
+
+## Isolated partner/UI demo
+
+Development also exposes /demo without seller login. It uses synthetic data in memory, never the API: consent → fictional contact → synthetic evidence → reviewer decision → activation, then customer/delivery simulations. Refresh/reset/withdrawal clears this data. No real identity upload, government ID or biometric collection is enabled.
+
+Default production web builds hide these routes. VITE_ENABLE_DEMO=true explicitly opts into an isolated demonstration build. Backend DEMO_MODE is separate; browser demo approval never authorizes backend operations.
+
+## Checks
+
+~~~powershell
+npm.cmd --prefix apps/web test
+npm.cmd --prefix apps/web run lint
+npm.cmd --prefix apps/web run typecheck
+npm.cmd --prefix apps/web run build
+npm.cmd --prefix apps/api test
+npm.cmd --prefix apps/api run lint
+npm.cmd --prefix apps/api run typecheck
+npm.cmd --prefix apps/api run build
+npm.cmd --prefix apps/api run test:integration
+npm.cmd --prefix apps/api run test:frontend -- "D:\path\to\UNLOSS\apps\web"
+~~~
+
+Database tests require an explicitly migrated loopback database named unloss_test_* in TEST_DATABASE_URL. They clean only their synthetic fixture rows. Never point tests at real user data. The adapter test uses real HTTP/PostgreSQL with a Node cookie/Origin shim; it is not a browser test.
+
+Current results: **49 frontend tests, 62 backend unit tests, 95 database integration tests**, actual adapter workflow and local compiled API smoke passed. Both apps' lint/typecheck/build passed; dependency audits reported zero vulnerabilities. Desktop/mobile/zoom/keyboard/visual/physical-print acceptance remains unverified because browser-tool access is blocked. Follow [the remaining QA checklist](docs/FRONTEND_QA.md) once that permission is available.

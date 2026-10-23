@@ -26,7 +26,7 @@ describe('routing and common controls', () => {
 
   it('navigates from the persisted dashboard summary to orders', async () => {
     const fetchMock = vi.fn((input: string) => {
-      if (input.endsWith('/auth/me')) return Promise.resolve(Response.json({ seller: { id: 'seller-1', name: 'Demo Seller', email: 'demo@unloss.local' } }));
+      if (input.endsWith('/auth/me')) return Promise.resolve(Response.json({ seller: { id: 'seller-1', name: 'Demo Seller', email: 'demo@unloss.local' }, mode: 'demo' }));
       if (input.endsWith('/dashboard/summary')) return Promise.resolve(Response.json({ totalOrders: 0, statusCounts: {}, rewardTotalPaise: 0 }));
       if (input.includes('/orders?')) return Promise.resolve(Response.json({ items: [], page: 1, pageSize: 25, total: 0 }));
       throw new Error('Unexpected endpoint: ' + input);
@@ -34,6 +34,7 @@ describe('routing and common controls', () => {
     vi.stubGlobal('fetch', fetchMock);
     render(<MemoryRouter initialEntries={['/dashboard']}><App /></MemoryRouter>);
     expect(await screen.findByRole('heading', { name: 'Delivery overview' })).toBeTruthy();
+    expect(screen.getByText(/DATABASE-BACKED LOCAL DEMO/)).toBeTruthy();
     fireEvent.click(screen.getByRole('link', { name: 'Orders' }));
     expect(await screen.findByRole('heading', { name: 'Orders' })).toBeTruthy();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/orders?'))).toBe(true);

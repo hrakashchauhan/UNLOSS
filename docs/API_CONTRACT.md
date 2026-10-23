@@ -1,6 +1,6 @@
 # UNLOSS API Contract
 
-Version: 1.0 (MVP)
+Version: 1.1 (integrated local MVP, 23 October 2026)
 
 This contract is the shared interface for `apps/web` and `apps/api`. The product source of truth is `UNLOSS_Master_Build_Reference_and_Parallel_Codex_Guide.md`. All timestamps are ISO-8601 UTC; report month boundaries use `Asia/Kolkata`.
 
@@ -9,7 +9,8 @@ This contract is the shared interface for `apps/web` and `apps/api`. The product
 - Base path: `/api`; JSON request/response bodies except CSV export.
 - Seller routes require an authenticated seller session. Every database lookup is scoped to the session seller.
 - Public delivery/customer routes require a purpose-specific opaque token. Tokens are high-entropy random values; persist a hash for lookup, set a 90-day expiry, and revoke on completion/cancellation. Wrong-purpose, expired, revoked, unknown, or ineligible tokens return `404 TOKEN_INVALID` (do not reveal which condition failed).
-- Session cookie: `unloss.sid`, `HttpOnly`, `SameSite=Lax`, `Secure` in production. Login/logout and state-changing cookie-authenticated requests enforce same-origin/CSRF protection.
+- Session cookie: `unloss.sid`, `HttpOnly`, `SameSite=Lax`, host-only. Sessions are persisted using hashed IDs, rotated on login and revoked on logout, with seven-day absolute expiry. Every mutation, including login and public token actions, requires the exact configured `Origin`. The cookie is configured Secure for future production use; production startup is currently refused.
+- Authentication and public-preview responses include `mode: "demo" | "manual"`, derived only from server configuration. Explicit server demo mode enables the labelled database-backed local workflow in the frontend. Missing/manual mode keeps public forms gated. This field is a capability label, never an authorization credential; the backend still validates each action.
 - Error envelope: `{ "error": { "code": "STABLE_CODE", "message": "Human-readable message", "details": {} }, "requestId": "..." }`. `details` is optional. Validation: 400; unauthenticated: 401; forbidden: 403; missing/inaccessible resource: 404; conflict/invalid transition: 409; throttled: 429; unavailable provider: 503.
 - Paginated lists accept `page` (default 1) and `pageSize` (default 25, max 100) and return `{ "items": [], "page": 1, "pageSize": 25, "total": 0 }`.
 
@@ -64,22 +65,28 @@ Customer decision body (requires `X-Customer-Verification`): `{ "action": "ACCEP
 
 Reward ledger entries contain `id`, `sellerId`, `orderId`, `amountPaise` (500 for credit), `currency` (`INR`), `type`, `eligibilityReason`, and `createdAt`. Unique constraint on `(orderId, type=DELIVERY_REWARD)` ensures idempotence. Credit only after an OTP-verified `ACCEPT` event followed by a delivery actor recording `DELIVERED_VERIFIED` handoff, in the same transaction as the status/event update.
 
+Delivery preview is eligible only in `OUT_FOR_DELIVERY`. It offers `DELIVERED_VERIFIED` only while this dispatch has current OTP acceptance. Customer actions in `OUT_FOR_DELIVERY` are `ACCEPT`, `REJECT`, and `REQUEST_REDELIVERY`; attempted/failed/rejected/returned states permit only `REQUEST_REDELIVERY`. Other states return `404 TOKEN_INVALID`. Acceptance does not change status or prove handoff. Proofs are one-use and bound to the token and dispatch attempt; a new dispatch requires fresh verification. Acceptance expires with the 15-minute proof.
+
+Seller cancellation, return initiation and redelivery require a reason. Sellers cannot directly record verified delivery or customer/delivery-only outcomes. `ADDRESS_ISSUE` requires `ADDRESS_INCORRECT` or `ADDRESS_INCOMPLETE`; `DELIVERED_VERIFIED` cannot include a failure reason. Optional notes are private to the seller timeline.
+
+Public mutation `order` is exactly `{orderReference,status}`. The safe `event` receipt exposes `id,eventType,fromStatus,toStatus,actorType,reasonCode,source,createdAt`; it omits private notes, actor IDs, order/seller IDs and metadata. Delivery always returns `ledgerEntry: null`. Ledger data is available only through seller-authenticated routes.
+
 ## Routes
 
 | Method and path | Auth | Request/query | Success |
 | --- | --- | --- | --- |
-| `POST /auth/login` | Public | `{email,password}` | 200 `{seller}` and session cookie |
+| `POST /auth/login` | Public | `{email,password}` | 200 `{seller,mode}` and session cookie |
 | `POST /auth/logout` | Seller | none | 204, clears session |
-| `GET /auth/me` | Seller | none | 200 `{seller}` |
+| `GET /auth/me` | Seller | none | 200 `{seller,mode}` |
 | `GET /dashboard/summary` | Seller | none | 200 counts from persisted data |
 | `GET /orders` | Seller | `q,status,page,pageSize` | 200 paginated seller-owned orders |
 | `POST /orders` | Seller | Order create schema | 201 `{order,qr:{deliveryUrl,customerUrl}}`; tokens are distinct and shown once |
 | `GET /orders/:id` | Seller | none | 200 `{order,events}` |
 | `GET /orders/:id/events` | Seller | pagination | 200 paginated append-only events |
 | `POST /orders/:id/transitions` | Seller | transition schema | 200 `{order,event}` |
-| `GET /delivery/:token` | Delivery token | none | 200 minimal order reference, status, permitted outcomes |
-| `POST /delivery/:token` | Delivery token | attempt schema | 201 `{order,event,ledgerEntry|null}`; duplicate action is idempotent |
-| `GET /customer/:token` | Customer token | none | 200 minimal order reference/status/actions |
+| `GET /delivery/:token` | Delivery token | none | 200 `{orderReference,status,mode,permittedOutcomes}` |
+| `POST /delivery/:token` | Delivery token | attempt schema | 201 `{order,event,ledgerEntry:null}`; effects are idempotent |
+| `GET /customer/:token` | Customer token | none | 200 `{orderReference,status,mode,allowedActions}` |
 | `POST /customer/:token/request-otp` | Customer token | `{}` | 202 OTP request schema |
 | `POST /customer/:token/verify-otp` | Customer token | OTP verify schema | 200 verification token schema |
 | `POST /customer/:token/decision` | Customer token + verification token | customer decision schema | 201 `{order,event}` |
@@ -91,9 +98,13 @@ Reward ledger entries contain `id`, `sellerId`, `orderId`, `amountPaise` (500 fo
 
 All `:id` routes return 404 for another seller's order. Auth errors and invalid transitions use the common envelope. No frontend may call undocumented routes.
 
+Idempotence means no duplicate committed event or credit. Once completion revokes a link or an action makes it ineligible, retries return 404 rather than replaying a success receipt. A consumed proof returns 401 when the QR is still eligible. The frontend retains the confirmed POST receipt instead of immediately fetching the now-closed link. After an ambiguous network failure, inspect seller history before retrying. Success-receipt replay and QR reissue are not existing routes.
+
 ## Reports and CSV
 
 Monthly JSON includes `{month,timezone,periodStart,periodEnd,totalOrdersCreated,ordersDispatched,deliveryAttempts,verifiedCompletions,returnsToSeller,returnRate,returnRateNumerator,returnRateDenominator,redeliveryRequests,rewardCreditCount,rewardTotalPaise,reasonCounts}`. Counts are events occurring within the selected local calendar month; current status summaries are as-of request time. Return rate is `RETURNED_TO_SELLER` events during the month divided by dispatch events during the month; if denominator is zero, rate is `null`. The response labels date range and denominator. CSV headers are stable: `month,timezone,period_start,period_end,total_orders_created,orders_dispatched,delivery_attempts,verified_completions,returns_to_seller,return_rate,return_rate_numerator,return_rate_denominator,redelivery_requests,reward_credit_count,reward_total_paise,reason_code,reason_count`. Emit one summary row per reason code; emit one row with blank reason fields if there are no reason events. No personal data in export.
+
+Report `periodStart` is inclusive and `periodEnd` exclusive. `deliveryAttempts` counts every delivery-actor outcome, including failed attempts and verified completion. `redeliveryRequests` includes customer `REQUEST_REDELIVERY` and seller `REDELIVERY_REQUESTED` events. Repeated attempts are event counts, not unique-order counts. Notifications are persisted in-app event records; there is no external-send or mark-as-read endpoint.
 
 ## Environment and setup contract
 
@@ -101,8 +112,8 @@ Monthly JSON includes `{month,timezone,periodStart,periodEnd,totalOrdersCreated,
 
 ## Implementation status and proposed extensions — 23 October 2026
 
-The interface above is unchanged. Current backend behavior does not yet satisfy every guarantee: see [backend dependencies](BACKEND_DEPENDENCIES.md) for public response privacy, state/actor enforcement, OTP replay/rate limiting, idempotency, notifications and report reconciliation. Frontend public writes remain disabled pending these fixes; a client-side gate does not secure the underlying API.
+The cumulative backend phases are integrated with the frontend. Version 1.1 records the additive server `mode` field and reconciles public-safe receipts, state/actor restrictions, retry semantics and report definitions with tested behavior. Existing paths and request schemas are preserved. Database-backed demo actions are enabled only by the explicit backend mode; `LIVE_PUBLIC_WRITES_READY` remains false for manual/production workflows. Production runtime is independently refused by the API. See [backend dependencies](BACKEND_DEPENDENCIES.md) for the remaining provider, partner and deployment work.
 
-Delivery-partner identity/review is a new requirement with no live routes. [The partner verification proposal](PARTNER_VERIFICATION_PROPOSAL.md) is **not an agreed API extension**. The frontend only implements an explicitly labelled synthetic demo for it; no partner endpoints have been invented. The user has reserved backend changes for the backend owner.
+Delivery-partner identity/review has no live routes. [The partner verification proposal](PARTNER_VERIFICATION_PROPOSAL.md) is **not an agreed API extension**. Its isolated frontend demo uses synthetic identities only. Local database demo delivery is a scoped QR-bearer workflow and is labelled accordingly; it does not authenticate official partner identity. Synthetic partner approval cannot authorize backend requests.
 
 Frontend demo routes are separate from API routes and issue no live requests. `VITE_ENABLE_DEMO=true` explicitly enables them on a dedicated demo deployment; local development enables them by default. Default production builds do not expose them. Demo approval never authorizes live delivery actions.
