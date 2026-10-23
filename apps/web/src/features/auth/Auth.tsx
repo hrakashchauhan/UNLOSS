@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Navigate, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, Outlet, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError, api, registerSellerSessionExpired, type Seller } from '../../api';
 import { ErrorBox, errText } from '../../ui/common';
+import { DEMO_ENABLED } from '../../config';
 
 type AuthPhase = 'checking' | 'authenticated' | 'unauthenticated' | 'error';
 interface AuthContextValue {
@@ -78,7 +79,7 @@ export function RequireSeller() {
 }
 
 function safeReturnTo(requested: string | null) {
-  if (!requested || !requested.startsWith('/') || requested.startsWith('//') || /^\/(login|customer|delivery)(\/|\?|$)/.test(requested)) return '/dashboard';
+  if (!requested || !requested.startsWith('/') || requested.startsWith('//') || requested.includes('\\') || [...requested].some(character => character.charCodeAt(0) < 32) || /^\/(login|customer|delivery)(\/|\?|$)/.test(requested)) return '/dashboard';
   return requested;
 }
 
@@ -118,6 +119,6 @@ function LoginForm({ returnTo }: { returnTo: string }) {
       {error && <ErrorBox message={error} />}
       <button className="button primary full" disabled={pending}>{pending ? 'Signing in…' : 'Sign in'}</button>
     </form>
-    <p className="login-note">Seller-only access</p>
+    <p className="login-note">Seller-only access</p>{DEMO_ENABLED && <p className="login-note"><Link to="/demo">Explore the synthetic workflow demo</Link></p>}
   </div></main>;
 }

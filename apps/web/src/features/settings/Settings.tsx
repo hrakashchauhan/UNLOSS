@@ -1,0 +1,9 @@
+import { Link } from 'react-router-dom';
+import { PageHead } from '../../ui/common';
+import { useAuth } from '../auth/Auth';
+import { DEMO_ENABLED } from '../../config';
+
+export function SettingsPage() {
+  const { seller } = useAuth();
+  return <><PageHead eyebrow="WORKSPACE" title="Settings & service availability" text="Account details and available capabilities for this installation." /><section className="panel"><h2>Seller account</h2><dl><dt>Name</dt><dd>{seller?.name}</dd><dt>Email</dt><dd>{seller?.email}</dd></dl><p className="muted">Account changes are not supported by the current service. Contact the administrator to update these details.</p></section><section className="panel"><h2>Service availability</h2><dl><dt>Orders, reports, and ledger</dt><dd>Connected through the configured UNLOSS API. These pages show persisted backend data or a visible error.</dd><dt>Customer & delivery actions</dt><dd>Read-only until verification and authorization checks are completed.</dd><dt>Delivery-partner identity</dt><dd>Live registration and official verification are unavailable. Synthetic demo only.</dd><dt>Courier, GPS, SMS, and payouts</dt><dd>No live integration is represented by this frontend. Internal reward entries are not payments.</dd></dl>{DEMO_ENABLED && <Link className="button subtle" to="/demo">Explore isolated workflow demo</Link>}</section><section className="panel"><h2>Privacy</h2><p>Keep QR links private: they are purpose-specific access links. Do not share seller credentials. This frontend does not store passwords, QR tokens, OTP proofs, identity documents, or demo data in local storage.</p><p>Production data retention and deletion are administered by the backend service. No identity upload is enabled here.</p></section></>;
+}

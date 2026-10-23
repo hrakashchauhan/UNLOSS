@@ -11,6 +11,16 @@ const emptyOrders = () => Response.json({ items: [], page: 1, pageSize: 25, tota
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 describe('seller session', () => {
+  it('rejects a backslash authority redirect and opens the dashboard', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: string) => {
+      if (input.endsWith('/auth/me')) return Promise.resolve(Response.json({ seller }));
+      if (input.endsWith('/dashboard/summary')) return Promise.resolve(Response.json({ totalOrders: 0, statusCounts: {}, rewardTotalPaise: 0 }));
+      if (input.includes('/orders?')) return Promise.resolve(emptyOrders());
+      throw new Error('Unexpected endpoint: ' + input);
+    }));
+    render(<MemoryRouter initialEntries={['/login?returnTo=' + encodeURIComponent('/\\external.example')]}><App /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Delivery overview' })).toBeTruthy();
+  });
   it('distinguishes an unavailable API from a signed-out session and supports retry', async () => {
     const fetchMock = vi.fn().mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce(noSession());
     vi.stubGlobal('fetch', fetchMock);

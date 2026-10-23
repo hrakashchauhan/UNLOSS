@@ -98,3 +98,11 @@ Monthly JSON includes `{month,timezone,periodStart,periodEnd,totalOrdersCreated,
 ## Environment and setup contract
 
 `DATABASE_URL` (PostgreSQL), `SESSION_SECRET` (random, minimum 32 bytes), `APP_ORIGIN`, `API_PORT` (default 3001), `DEMO_MODE` (default false), `SEED_SELLER_EMAIL`, `SEED_SELLER_PASSWORD`, `QR_TOKEN_TTL_DAYS` (default 90), and provider credentials only when a real OTP provider is implemented. `.env.example` contains placeholders, never live secrets. Demo seed data and test OTP must be labelled and must never be represented as production data.
+
+## Implementation status and proposed extensions — 23 October 2026
+
+The interface above is unchanged. Current backend behavior does not yet satisfy every guarantee: see [backend dependencies](BACKEND_DEPENDENCIES.md) for public response privacy, state/actor enforcement, OTP replay/rate limiting, idempotency, notifications and report reconciliation. Frontend public writes remain disabled pending these fixes; a client-side gate does not secure the underlying API.
+
+Delivery-partner identity/review is a new requirement with no live routes. [The partner verification proposal](PARTNER_VERIFICATION_PROPOSAL.md) is **not an agreed API extension**. The frontend only implements an explicitly labelled synthetic demo for it; no partner endpoints have been invented. The user has reserved backend changes for the backend owner.
+
+Frontend demo routes are separate from API routes and issue no live requests. `VITE_ENABLE_DEMO=true` explicitly enables them on a dedicated demo deployment; local development enables them by default. Default production builds do not expose them. Demo approval never authorizes live delivery actions.

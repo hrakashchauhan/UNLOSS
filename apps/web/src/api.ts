@@ -27,6 +27,15 @@ export interface CreateOrderRequest {
 }
 export interface OrderCreated { order: Order; qr: { deliveryUrl: string; customerUrl: string } }
 export interface OrderDetail { order: Order; events: Event[] }
+export interface RewardSummary { creditCount: number; totalPaise: number; currency: string }
+export interface LedgerEntry { id: string; orderId: string; amountPaise: number; currency: string; type: 'DELIVERY_REWARD' | 'REVERSAL'; eligibilityReason: string; createdAt: string }
+export interface Notification { id: string; title: string; body: string; createdAt: string }
+export interface MonthlyReport {
+  month: string; timezone: string; periodStart: string; periodEnd: string;
+  totalOrdersCreated: number; ordersDispatched: number; deliveryAttempts: number; verifiedCompletions: number;
+  returnsToSeller: number; returnRate: number | null; returnRateNumerator: number; returnRateDenominator: number;
+  redeliveryRequests: number; rewardCreditCount: number; rewardTotalPaise: number; reasonCounts: Record<string, number>;
+}
 export interface ApiErrorShape { error: { code: string; message: string; details?: unknown }; requestId?: string }
 
 export class ApiError extends Error {
@@ -81,6 +90,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 }
 
 export const ordersApi = {
+  async transition(id: string, body: { toStatus: OrderStatus; reasonCode: ReasonCode | null; note: string | null }) {
+    const result = await api<{ order: RawOrder; event: Event }>(`/orders/${encodeURIComponent(id)}/transitions`, { method: 'POST', body: JSON.stringify(body) });
+    return { order: normalizeOrder(result.order), event: result.event };
+  },
   async list(query: { q?: string; status?: string; page: number; pageSize: number }, signal?: AbortSignal): Promise<Page<Order>> {
     const response = await api<Page<RawOrder>>(`/orders${qs(query)}`, { signal });
     if (!Array.isArray(response?.items)) throw new ApiError(200, 'INVALID_RESPONSE', 'The server returned an invalid order list.');

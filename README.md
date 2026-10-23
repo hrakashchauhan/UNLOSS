@@ -4,7 +4,7 @@ UNLOSS is a seller-focused parcel delivery verification and return-tracking MVP.
 
 ## Requirements
 
-- Node.js 20 or newer and npm.
+- A Node.js version supported by the installed Vite release and npm (Node 22.12+ recommended).
 - PostgreSQL 15 or newer.
 
 ## Local setup
@@ -31,4 +31,14 @@ On Windows PowerShell, use `npm.cmd` if script execution policy blocks `npm.ps1`
 
 The frontend and backend are separate npm applications under `apps/`. Configure `APP_ORIGIN` in the API environment to match the Vite origin. For contract details and report calculations, see `docs/API_CONTRACT.md`.
 
-Frontend work is tracked in [`docs/FRONTEND_PROGRESS.md`](docs/FRONTEND_PROGRESS.md). Phase 1 exposes public QR links as read-only previews until backend token eligibility, status validation, and public-response privacy fixes are complete. QR images, delivery/customer actions, and full print sheets remain for later phases.
+Frontend work and actual check results are tracked in [`docs/FRONTEND_PROGRESS.md`](docs/FRONTEND_PROGRESS.md). Seller screens now cover order creation/search/filter/pagination/details, returns/redelivery, chronological events, notifications, the internal ledger, and monthly reports/CSV. Creation produces two scannable purpose-specific QR codes and a printable order sheet. Save/print it before leaving: the API exposes those links once and has no reissue endpoint.
+
+Live public links remain read-only until the backend fixes in [`docs/BACKEND_DEPENDENCIES.md`](docs/BACKEND_DEPENDENCIES.md) are complete. Backend source was left unchanged at the user's request. No claim of working production delivery verification or identity verification is made.
+
+## Isolated frontend demo
+
+Run `npm.cmd --prefix apps/web ci`, then `npm.cmd --prefix apps/web run dev`, and open `/demo` on the Vite URL. No backend or seller login is required for this **synthetic** preview. Follow the links in one tab: partner consent/contact/evidence/reviewer/activation → customer demo OTP acceptance → delivery outcome. The demo records a simulated ₹5 ledger value after the qualifying handoff. Reset or withdraw consent to delete its in-memory data; refreshing also clears it.
+
+It uses no real identity documents, government IDs, biometric data, SMS, courier integration or payouts. Demo approval cannot authorize live requests. Default production builds hide demo routes; set `VITE_ENABLE_DEMO=true` only for an intentionally labelled demo deployment. `DEMO_MODE` on the backend is a separate setting; neither setting enables real public writes in this frontend.
+
+See [`docs/FRONTEND_QA.md`](docs/FRONTEND_QA.md) for the unexecuted real-browser/integration checklist and [`docs/PARTNER_VERIFICATION_PROPOSAL.md`](docs/PARTNER_VERIFICATION_PROPOSAL.md) for the pending partner contract.
