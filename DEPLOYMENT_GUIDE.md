@@ -88,11 +88,13 @@ Recipients can reject or request redelivery with a reason. Acceptance is tied to
 
 Anonymous mutations, unsigned courier webhooks, simulated payment checkout and phone OTP remain disabled outside demo mode. The authenticated workspace provides the authorized flow. No schema migration is required for this release. Keep SESSION_SECRET stable because new QR encryption uses it.
 
+Release 7b5ece6 deployed successfully to Render and Vercel. Live signed-in workspace and wallet returned data; readiness and SPA routes returned 200. Signed-out workspace/events returned 401. Live synthetic QR creation/retrieval preserved identical links.
+
 ## 6. Verification checklist
 
 - [x] Supabase connection and managed schema migration.
 - [x] Backend unit tests: 74 passed; database integration tests: 107 passed.
-- [x] Frontend tests: 53 passed.
+- [x] Frontend tests: 53 passed; two additional wallet tests passed.
 - [x] API and frontend TypeScript checks.
 - [x] Vercel production deployment ready; direct `/login` returns HTTP 200.
 - [x] Render `/health/ready` returns HTTP 200.

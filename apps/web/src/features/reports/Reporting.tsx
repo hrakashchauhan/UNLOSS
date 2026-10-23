@@ -75,9 +75,9 @@ export function Dashboard() {
     <div className="page-heading">
       <PageHead eyebrow="SELLER WORKSPACE" title="Delivery overview" text="Current order records, delivery claims, and reward budget status." />
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-        <button className="button subtle" onClick={() => setTopUpModal(true)}>
+        {import.meta.env.VITE_ENABLE_DEMO === 'true' ? <button className="button subtle" onClick={() => setTopUpModal(true)}>
           <CreditCard size={15} style={{ marginRight: '6px' }} /> Top Up Budget
-        </button>
+        </button> : <Link className="button subtle" to="/parcels">Simulated rewards & wallet</Link>}
         <Link className="button primary" to="/orders/new">
           <Plus size={15} style={{ marginRight: '4px' }} /> Create an order / Dual QR
         </Link>
@@ -93,10 +93,10 @@ export function Dashboard() {
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
         <Stat label="Total orders" value={data.totalOrders} sub="All time records" />
         <Stat label="Out for delivery" value={data.statusCounts.OUT_FOR_DELIVERY || 0} sub="In transit / dispatched" />
-        <Stat label="Verified deliveries" value={data.statusCounts.DELIVERED_VERIFIED || 0} sub="OTP confirmed completions" />
+        <Stat label="Verified deliveries" value={data.statusCounts.DELIVERED_VERIFIED || 0} sub="Recipient-approved handoffs" />
         <Stat label="Returned to seller" value={data.statusCounts.RETURNED_TO_SELLER || 0} sub="Recorded returns" />
         <Stat
-          label="Reward Budget (Available)"
+          label="Demo funding budget"
           value={money(funding?.availablePaise || 0)}
           sub={`Reserved: ${money(funding?.reservedPaise || 0)}`}
         />
@@ -175,7 +175,7 @@ export function Dashboard() {
             <Link to="/rewards">Reward ledger: {money(data.rewardTotalPaise)} →</Link>
           </div>
           <p className="notice" style={{ marginTop: '16px' }}>
-            ₹5 reward credits are reserved from your funding budget and awarded once an order satisfies customer OTP acceptance and verified handoff.
+            Each assigned customer approval and courier handoff earns one simulated ₹5 credit. Withdrawals unlock after seven full days. No real funds are held or transferred.
           </p>
         </section>
       </div>
