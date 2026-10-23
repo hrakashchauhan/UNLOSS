@@ -3,7 +3,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { createHmac, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import type { Config } from './config.js';
-import { err } from './http.js';
+import { err, HttpError } from './http.js';
 import { hashToken } from './rules.js';
 import { lockOrder, reasonFields } from './domain.js';
 import { customerActions, deliveryOutcomes, getQrToken, publicEvent, publicOrder, type QrPurpose } from './qr.js';
@@ -37,7 +37,10 @@ export function registerPublicRoutes(app: Express, prisma: PrismaClient, config:
       const now = new Date();
       const last = await tx.otpChallenge.findFirst({ where: { customerTokenId: t.id }, orderBy: { createdAt: 'desc' } });
       const count = await tx.otpChallenge.count({ where: { customerTokenId: t.id, createdAt: { gt: new Date(now.getTime() - 3600_000) } } });
-      if (count >= 5 || (last && now.getTime() - last.createdAt.getTime() < 60_000)) throw err('RATE_LIMITED', 'OTP request limit reached; wait before retrying', 429);
+      if (count >= 5 || (last && now.getTime() - last.createdAt.getTime() < 60_000)) {
+        const wait = count >= 5 ? 3600 : Math.max(1, Math.ceil((60_000 - (now.getTime() - last!.createdAt.getTime())) / 1000));
+        throw new HttpError('RATE_LIMITED', 'OTP request limit reached; wait before retrying', 429, wait);
+      }
       const id = randomUUID(), code = String(randomInt(0, 1_000_000)).padStart(6, '0');
       const expiresAt = new Date(now.getTime() + 300_000);
       await tx.otpChallenge.updateMany({ where: { customerTokenId: t.id, consumedAt: null }, data: { consumedAt: now } });

@@ -47,6 +47,7 @@ it('serializes resends so concurrent requests issue just one challenge', async (
   const results = await Promise.all(Array.from({ length: 4 }, () => f.request(`${o.customer}/request-otp`, {}, false)));
   expect(results.filter(r => r.status === 202)).toHaveLength(1);
   expect(results.filter(r => r.status === 429)).toHaveLength(3);
+  expect(results.filter(r => r.status === 429).every(r => Number(r.headers.get('retry-after')) > 0)).toBe(true);
   expect(await f.prisma.otpChallenge.count({ where: { orderId: o.order.id } })).toBe(1);
 });
 it('expires OTPs and verification proofs on the server', async () => {

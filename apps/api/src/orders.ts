@@ -10,6 +10,7 @@ import { lockOrder, pagination, paginationSchema, reasonFields, statuses } from 
 
 import { changeStatus } from './workflow.js';
 import { notifyEvent } from './notifications.js';
+import { sellerOrder } from './order-response.js';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 export const createOrderSchema = z.object({
@@ -52,14 +53,17 @@ export function registerOrderRoutes(app: Express, prisma: PrismaClient, config: 
       prisma.order.findMany({ where, skip: (page - 1) * pageSize, take: pageSize, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }),
       prisma.order.count({ where }),
     ], { isolationLevel: 'RepeatableRead' });
-    res.json({ items, page, pageSize, total });
+    res.json({ items: items.map(sellerOrder), page, pageSize, total });
   });
-  app.post('/api/orders', auth, async (req, res) => res.status(201).json(await createOrder(prisma, config, currentSeller(res).id, req.body)));
+  app.post('/api/orders', auth, async (req, res) => {
+    const result = await createOrder(prisma, config, currentSeller(res).id, req.body);
+    res.status(201).json({ ...result, order: sellerOrder(result.order) });
+  });
   app.get('/api/orders/:id', auth, async (req, res) => {
     const result = await prisma.order.findFirst({ where: { id: String(req.params.id), sellerId: currentSeller(res).id }, include: { events: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] } } });
     if (!result) throw err('NOT_FOUND', 'Order not found', 404);
     const { events, ...order } = result;
-    res.json({ order, events });
+    res.json({ order: sellerOrder(order), events });
   });
   app.get('/api/orders/:id/events', auth, async (req, res) => {
     const { page, pageSize } = pagination(req.query), sellerId = currentSeller(res).id, orderId = String(req.params.id);
@@ -78,6 +82,6 @@ export function registerOrderRoutes(app: Express, prisma: PrismaClient, config: 
       if (!sellerTargets.has(v.toStatus)) throw err('FORBIDDEN', 'This outcome requires the verified delivery/customer workflow', 403);
       return changeStatus(tx, before, v.toStatus, { eventType: v.toStatus, actorType: 'SELLER', actorId: sellerId, reasonCode: v.reasonCode, note: v.note, source: config.demo ? 'DEMO' : 'MANUAL' });
     });
-    res.json(result);
+    res.json({ ...result, order: sellerOrder(result.order) });
   });
 }

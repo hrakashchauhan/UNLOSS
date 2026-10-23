@@ -17,6 +17,12 @@ describe('server lifecycle', () => {
     vi.spyOn(prisma.seller, 'findFirst').mockResolvedValue(null);
     vi.spyOn(prisma.session, 'findFirst').mockResolvedValue(null);
     vi.spyOn(prisma.rateLimitBucket, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.order, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.orderEvent, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.qrToken, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.otpChallenge, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.ledgerEntry, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.notification, 'findFirst').mockResolvedValue(null);
     return prisma;
   }
   it('does not open a port after failed connectivity and releases resources', async () => {

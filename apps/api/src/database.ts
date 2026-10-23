@@ -17,5 +17,11 @@ export async function checkDatabase(prisma: PrismaClient) {
     prisma.seller.findFirst({ select: { id: true } }),
     prisma.session.findFirst({ select: { sid: true } }),
     prisma.rateLimitBucket.findFirst({ select: { key: true } }),
+    prisma.order.findFirst({ select: { id: true, deliveryAttempt: true, acceptedAttempt: true, acceptedUntil: true, acceptedChallengeId: true } }),
+    prisma.orderEvent.findFirst({ select: { id: true } }),
+    prisma.qrToken.findFirst({ select: { id: true } }),
+    prisma.otpChallenge.findFirst({ select: { id: true, deliveryAttempt: true, consumedAt: true } }),
+    prisma.ledgerEntry.findFirst({ select: { id: true } }),
+    prisma.notification.findFirst({ select: { id: true } }),
   ]);
 }

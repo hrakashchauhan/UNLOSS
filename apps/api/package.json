@@ -20,7 +20,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "lint": "eslint src test prisma/seed.ts vitest.integration.config.ts"
+    "lint": "eslint src test prisma/seed.ts vitest.integration.config.ts",
+    "test:frontend": "tsx test/frontend-live-check.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

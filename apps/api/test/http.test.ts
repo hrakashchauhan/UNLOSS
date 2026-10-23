@@ -18,6 +18,12 @@ describe('HTTP foundation', () => {
     vi.spyOn(prisma.seller, 'findFirst').mockResolvedValue(null);
     vi.spyOn(prisma.session, 'findFirst').mockResolvedValue(null);
     vi.spyOn(prisma.rateLimitBucket, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.order, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.orderEvent, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.qrToken, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.otpChallenge, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.ledgerEntry, 'findFirst').mockResolvedValue(null);
+    vi.spyOn(prisma.notification, 'findFirst').mockResolvedValue(null);
     logs = []; shuttingDown = false;
     server = await listen(createApp({ config, prisma, logger: createLogger(line => logs.push(line)), isShuttingDown: () => shuttingDown }));
   });
@@ -49,6 +55,13 @@ describe('HTTP foundation', () => {
     shuttingDown = true;
     expect((await fetch(`${server.url}/health/ready`)).status).toBe(503);
     expect(prisma.$queryRaw).not.toHaveBeenCalled();
+  });
+  it('fails readiness when authentication works but a workflow migration is missing', async () => {
+    vi.mocked(prisma.otpChallenge.findFirst).mockRejectedValue(new Error('missing consumedAt column'));
+    const response = await fetch(`${server.url}/health/ready`);
+    expect(response.status).toBe(503);
+    expect((await response.json()).error.code).toBe('NOT_READY');
+    expect(logs.join('')).not.toContain('consumedAt');
   });
   it.each([undefined, 'https://attacker.example', 'null'])('rejects missing/untrusted origin on login: %s', async origin => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };

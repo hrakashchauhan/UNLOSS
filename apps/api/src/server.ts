@@ -18,7 +18,7 @@ export async function startServer(config: Config, logger: Logger, prisma: Prisma
     await checkDatabase(prisma);
     const app = createApp({ config, prisma, logger, isShuttingDown: () => shuttingDown });
     server = await new Promise<Server>((resolve, reject) => {
-      // Audited foundation only: legacy workflows stay on loopback until hardened.
+      // Local/manual MVP only; deployment and partner/provider integration remain gated.
       const listener = createServer(app);
       listener.once('error', reject);
       listener.listen(config.port, '127.0.0.1', () => resolve(listener));

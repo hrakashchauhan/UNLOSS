@@ -1,25 +1,21 @@
 # UNLOSS backend
 
-Phase 2 authentication and seller-isolation checkpoint, built on the verified foundation. Product behavior remains defined by the existing [master reference](../../UNLOSS_Master_Build_Reference_and_Parallel_Codex_Guide.md) and [API contract](../../docs/API_CONTRACT.md). See [backend progress](../../docs/BACKEND_PROGRESS.md) for the audit, remaining security defects, and verification results.
+The nine agreed MVP backend phases are implemented and verified against PostgreSQL. The [master reference](../../UNLOSS_Master_Build_Reference_and_Parallel_Codex_Guide.md), existing [API contract](../../docs/API_CONTRACT.md), [progress record](../../docs/BACKEND_PROGRESS.md), and [backend integration handoff](../../docs/BACKEND_INTEGRATION.md) describe scope and evidence.
 
-This checkpoint is for local development. It binds to `127.0.0.1` and rejects `NODE_ENV=production` with `PRODUCTION_NOT_READY`. Seller sessions and seller-route isolation are verified; the preserved MVP routes still need QR, OTP decision/retry, transition-concurrency, and reward verification. Keep public workflow actions paused in the frontend. Do not publish this checkpoint through a reverse proxy or tunnel.
+This remains a loopback-only local/manual MVP. `NODE_ENV=production` fails with `PRODUCTION_NOT_READY` until deployment, real OTP delivery and the separately proposed partner authorization are agreed and verified. The frontend public-write gate remains disabled. No courier/GPS integration, real SMS/email, identity verification, payment or payout is claimed. An authorized QR bearer records a manual/demo outcome; that is not independently verified physical evidence.
 
 ## Setup
 
-Use Node.js 20.19+ or 22.12+ (verified with Node 24), npm, and PostgreSQL 15+. From the repository root:
+Use Node.js 20.19+ or 22.12+ (tested with Node 24), npm, and PostgreSQL 15+ (tested with 17.11). From the repository root:
 
 ```powershell
 npm.cmd --prefix apps/api ci
 Copy-Item apps/api/.env.example apps/api/.env
 ```
 
-Edit the ignored `apps/api/.env`:
+Edit the ignored `.env`. Set your PostgreSQL `DATABASE_URL`, a random `SESSION_SECRET` of at least 32 bytes, exact `APP_ORIGIN` (default `http://localhost:5173`), and `API_PORT` (default 3001). Generate secrets locally; never commit them. There is no built-in seller password. All mutating API calls, including public token actions and login, require the exact `Origin` header. Browser requests supply it automatically.
 
-- Set `DATABASE_URL` to your local database. Database creation is an explicit operator step; startup never creates, migrates, resets, or seeds a database.
-- Replace `SESSION_SECRET` with a cryptographically random secret of at least 32 bytes. Placeholder secrets are rejected. Generate a local value with `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`; never commit it.
-- Set `APP_ORIGIN` to the exact browser origin, for example `http://localhost:5173`, without a path or trailing slash. Use that same hostname in your browser. Every mutating `/api` request, including login, requires this `Origin` header. The existing browser client sends it automatically.
-- `API_PORT` defaults to 3001; valid values are 1–65535. `QR_TOKEN_TTL_DAYS` defaults to 90 and must be an integer from 1 to 365.
-- `DEMO_MODE` defaults to `false`. To seed a local demo, explicitly set it to `true` and choose `SEED_SELLER_EMAIL` and `SEED_SELLER_PASSWORD` (12–72 UTF-8 bytes). The example password is a placeholder and is rejected. **There is no default login password in this checkpoint.** The root README's older fixed demo credentials no longer apply.
+`DEMO_MODE` defaults false. Set it true only for local synthetic testing and demo seeding. Choose `SEED_SELLER_EMAIL` and a non-placeholder `SEED_SELLER_PASSWORD` of 12–72 UTF-8 bytes. `QR_TOKEN_TTL_DAYS` defaults to 90, range 1–365. `SEED_SAMPLE_ORDERS=true` optionally adds three explicitly synthetic created/dispatched/returned orders; default false. Reruns preserve existing passwords, order edits and events. Seeds never credit rewards. Create a new order through the API/UI to obtain printable QR links: raw seed tokens are not retained or logged.
 
 ```powershell
 npm.cmd --prefix apps/api run prisma:generate
@@ -29,52 +25,52 @@ npm.cmd --prefix apps/api run db:seed
 npm.cmd --prefix apps/api run dev
 ```
 
-Seeding requires explicit non-production demo mode. It creates a seller if absent; reruns preserve an existing seller's password and data. Seeded sample orders and scenarios remain for later phases. Never run `db:dev` against existing/shared data without reviewing its proposed migration; this phase uses only `db:migrate` (`prisma migrate deploy`).
+Database creation is an operator step. Startup never creates, migrates, resets or seeds data. `db:migrate` deploys four preserved/versioned migrations. The ledger integrity migration adds a composite owner foreign key and INR 500-paise credit check; it fails on inconsistent legacy records instead of deleting/repairing them. Back up and inspect existing data before applying to any non-test database. Do not run `db:dev` against shared data without reviewing its proposal.
 
-For a compiled local run:
+The existing Vite proxy targets port 3001. If running from the separate backend worktree, use port 3001 and the same `APP_ORIGIN` as the frontend; do not overwrite the original untracked backend copy. For a compiled run:
 
 ```powershell
 npm.cmd --prefix apps/api run build
 npm.cmd --prefix apps/api start
 ```
 
-`build` compiles application files to `dist/server.js`; tests and seed scripts are not emitted. `start` validates configuration and database connectivity/schema before opening a port. Startup failures exit nonzero with a sanitized JSON event; connection strings and raw database errors are not printed. `SIGINT`/`SIGTERM` stop accepting new requests, drain HTTP connections (10-second deadline), and disconnect Prisma.
+## Operations and authentication
 
-## Operational endpoints
+`/health/live` reports process liveness. `/health/ready` probes connectivity, every application table and the added workflow columns; it returns 503 while unavailable/unmigrated/draining. Both identify demo/manual mode. Startup errors are sanitized and exit nonzero. The server binds `127.0.0.1`, uses bounded connection/query waits and HTTP timeouts, and drains before disconnecting on shutdown. Production/reverse-proxy deployment is not enabled.
 
-These endpoints sit outside the product `/api` contract and require no cookie:
+Requests have server-generated IDs, `Cache-Control: no-store`, security headers and safe JSON errors. Bodies are capped at 32 KiB. Logs contain route templates and status, never raw URLs/tokens, phone/address, bodies, cookies, OTPs, secrets or stack traces. Future proxy logs must separately redact token paths.
 
-| Endpoint | Result |
-| --- | --- |
-| `GET /health/live` | 200 `{status:"ok",mode:"demo"\|"manual"}` while the process responds; no DB query |
-| `GET /health/ready` | 200 `{status:"ready",mode:"demo"\|"manual"}` after a DB probe and Seller/Session/RateLimitBucket queries; 503 common error envelope if unavailable/unmigrated or draining |
+Seller authentication uses bcrypt, normalized email, constant-cost unknown-email comparison and a signed HttpOnly/SameSite=Lax host-only cookie. Login rotates/persists before success. Sessions use hashed IDs in PostgreSQL with seven-day absolute expiry; logout revokes durably, and password change/deletion invalidates access. Stale requests cannot recreate revoked sessions. All seller queries are scoped to the trusted session seller. Foreign and missing orders both return 404. No password-reset, registration or partner-review endpoints are invented.
 
-The DB probe checks reachability and the authentication tables; full migration status is checked separately with `prisma migrate status`. Connection, pool, and socket timeouts default to five seconds when not explicitly set in the connection URL.
+Durable HMAC-keyed PostgreSQL rate limits apply across processes sharing the same session secret. Forwarded IP headers remain untrusted; local Vite users share its socket IP budget. Limits fail closed with 503 if storage fails. 429 includes `Retry-After`. Expired sessions and rate buckets are cleaned every 15 minutes.
 
-All responses get a server-generated `X-Request-Id` and `Cache-Control: no-store`. JSON errors include the same request ID. JSON bodies are limited to 32 KiB. Unexpected failures return a generic message; validation details expose field paths and stable issue codes only. Operational logs contain JSON events and route templates, never raw URLs, query strings, bodies, cookies, verification tokens, OTPs, connection strings, or stack traces. Configure your reverse-proxy access logs separately before future deployment; application redaction cannot sanitize external logs.
+| Endpoint | IP budget | Token/account budget |
+| --- | --- | --- |
+| Login | 30 / 15 minutes | 10 / normalized email / 15 minutes |
+| OTP request | 5 / hour | 5 / token / hour, 60-second resend cooldown |
+| OTP verification | 30 / 15 minutes | 10 / token / 15 minutes; five guesses per challenge |
+| Customer decision | 30 / 15 minutes | 10 / token / 15 minutes |
+| Delivery outcome | 60 / 15 minutes | 20 / token / 15 minutes |
 
-## Authentication and isolation
+## Workflow guarantees
 
-Run `db:migrate` before starting this version. Migration `20261023170000_auth_rate_limits` only adds an indexed `RateLimitBucket` table; it does not change existing records or the original migration. The existing `Session` table is reused through a Prisma store, avoiding a second connection pool or an incompatible session-table format.
+Order/event/two-token creation is atomic. Inputs, filters and integer pagination are validated; lists use deterministic ordering and consistent count snapshots. Seller responses retain the documented flat fields. Events are append-only through the API; there is no undocumented edit/delete endpoint.
 
-- Login normalizes email, rejects passwords exceeding bcrypt's 72-byte limit, and performs a bcrypt comparison for unknown emails with the same generic credential error. Seeded passwords continue using bcrypt cost 12.
-- Login rotates the session ID, persists the new session, and confirms persistence before returning success. The signed `unloss.sid` cookie retains `HttpOnly`, `SameSite=Lax`, host-only scope and path `/`; `Secure` is set in production configuration (production serving remains blocked).
-- The database holds a SHA-256 session-ID digest, seller ID, a digest of the password hash for invalidation, and an absolute expiry. Raw session IDs, passwords and cookie headers are not stored. Sessions last seven days from login; browsing does not extend that deadline. Keep `SESSION_SECRET` identical across app instances and stable across restarts.
-- Logout deletes the persisted session and clears the cookie only after successful revocation. Normal session saves/touches cannot create rows, so an old in-flight request cannot resurrect a logged-out session. Expired/deleted-seller sessions are rejected; a changed password hash invalidates the session on its next authenticated request. Phase 1 in-memory sessions require a new login.
-- Missing/expired/revoked sessions return `401 UNAUTHENTICATED`; storage failures return a sanitized `503 SESSION_UNAVAILABLE`. Invalid credentials remain `401 INVALID_CREDENTIALS`. Anonymous requests create no persisted session.
-- Seller identity comes exclusively from the authenticated session and current Seller record. All seller order/event/ledger/notification/report queries are owner-scoped. Foreign order IDs return the same 404 as missing IDs. A seller attempting `DELIVERED_VERIFIED` receives `403 FORBIDDEN`; verified completion requires the scoped delivery workflow.
+Every mutation locks the order, rechecks token and current state, and uses the authoritative transition service. Sellers cannot impersonate delivery/customer actors or set verified completion. Cancellation, return initiation, redelivery, rejection and failure require reasons. Actor/source describe who reported a reason; they do not assign fault.
 
-Authentication/OTP throttling uses the existing `express-rate-limit` package and an atomic, parameterized PostgreSQL upsert. Counters persist across processes/restarts and store keyed digests instead of raw IPs, emails or QR tokens. The same `SESSION_SECRET` must be used by cooperating instances. All requests reaching a limiter count, including failed attempts; successful requests do not reset the budget.
+QR tokens contain 32 random bytes and only hashes are stored. Purpose, expiry, revocation and eligible state are enforced. Delivery is eligible OUT_FOR_DELIVERY; customer actions are state-dependent. Scans never change state or award rewards. Public responses contain only reference/status and safe event receipt fields, never phone/address/private notes/seller ID/ledger. The legacy response key `ledgerEntry` is always null publicly.
 
-| Endpoint | Budgets |
-| --- | --- |
-| Login | 30 requests/IP/15 minutes; 10 requests/normalized email/15 minutes |
-| OTP request | 5 requests/IP/hour and 5 requests/customer token/hour; existing resend cooldown also remains |
-| OTP verification | 30 requests/IP/15 minutes and 10 requests/customer token/15 minutes; existing five-attempt challenge cap remains |
+Demo OTP responses explicitly say no SMS was sent. Non-demo requests return `503 OTP_PROVIDER_UNAVAILABLE`. Codes are HMAC-bound to a challenge, expire after five minutes and allow five guesses. Successful verification is one-time; its scoped proof expires after 15 minutes and is consumed by one decision. Acceptance expires with that proof and belongs to the current dispatch attempt. Resend invalidates older outstanding challenges. Lifecycle changes invalidate proofs and acceptance; redelivery must redispatch and obtain fresh acceptance.
 
-Throttling returns `429 RATE_LIMITED`, the common error envelope and `Retry-After`. Unavailable limiter storage fails closed with `503 RATE_LIMIT_UNAVAILABLE`. These are additional request budgets; Phase 5 still owns concurrency-safe per-challenge retries, one-time verification and customer decisions.
+Verified handoff requires the current expiring acceptance, consumed verified challenge, live customer token and recorded CUSTOMER ACCEPT evidence. Status, event, revocation, notification and the one INR 500-paise internal credit commit together. Uniqueness and owner/amount constraints backstop eligibility. No reward comes from a scan, acceptance alone, a seller flag or an old attempt. There is no payout API.
 
-Proxy trust remains **disabled**. IP keys use the socket peer (IPv6 addresses grouped by subnet), ignoring spoofed `Forwarded`/`X-Forwarded-For`. Requests through the local Vite proxy consequently share its IP budget. A future public deployment must define and test its actual proxy topology before changing this behavior. Expired sessions and rate buckets are pruned every 15 minutes; cleanup failures are logged safely, without failing open.
+Duplicates are idempotent in effect: one event/credit can commit. After state changes make the QR ineligible or completion revokes it, retries return the contract-required `404 TOKEN_INVALID`; they do not replay success through a revoked capability. Reused decision proofs return 401. The authenticated order timeline confirms whether an earlier request committed.
+
+## Reports and notifications
+
+Notifications are persisted in-app records only, one per recorded event. No external send or read/unread status is implied. Monthly reports count events within inclusive-start/exclusive-end Asia/Kolkata month bounds, expressed as UTC ISO strings. Delivery attempts include all delivery-actor outcomes; redelivery includes both customer and seller request event names. Return rate is returned events / dispatch events in the month, null if there were no dispatches. Repeated attempts can exceed unique orders. Dashboard counts are current status, not monthly cohorts.
+
+CSV and JSON use the same aggregate/snapshot logic and stable documented columns. CSV contains no customer fields, escapes quotes/formulas, and leaves both reason cells blank for an empty reason set. Month inputs require years 1000–9999 and months 01–12.
 
 ## Verification
 
@@ -86,20 +82,13 @@ npm.cmd --prefix apps/api run build
 npm.cmd --prefix apps/api audit
 ```
 
-`test` runs the existing business-rule tests plus foundation/configuration/HTTP/lifecycle/authentication failure tests. HTTP unit tests use real Express middleware with stubbed database calls; business-workflow completion is not implied.
-
-For real database tests, explicitly create a dedicated **local** database whose name starts with `unloss_test_`. Set `DATABASE_URL` to that test database while running `db:migrate`, and set `TEST_DATABASE_URL` to the same connection URL before running:
+For integration tests, explicitly use a migrated loopback database named `unloss_test_*` and set `TEST_DATABASE_URL`. The command fails if absent/unsafe; it never silently skips. Only synthetic fixture rows are cleaned. Run migrations with `DATABASE_URL` pointed to the same test database.
 
 ```powershell
 npm.cmd --prefix apps/api run test:integration
+npm.cmd --prefix apps/api run test:frontend -- "D:\path\to\current-frontend\apps\web"
 ```
 
-The integration command fails if the URL is missing, non-loopback, or not named `unloss_test_*`; it never silently skips. Tests check the migrated tables, readiness, seed preservation, login/session lifecycle, all seller-route isolation, existing frontend response shapes, transaction rollback, concurrent rate counting, spoofed forwarding headers and OTP request budgets. Cleanup targets synthetic fixtures; the maintenance test also exercises deletion of expired security records in this dedicated test database. The default unit command deliberately excludes the separately invoked integration suites. Current results: **51 unit/foundation tests and 42 PostgreSQL integration tests pass**.
+The optional frontend command requires the current frontend dependencies installed. It loads the actual API adapters with Vite and runs them against real HTTP/PostgreSQL using a Node cookie/Origin transport shim. It does not enable the UI gate, modify frontend files, or claim browser/print/mobile QA. Current automated totals and process checks are recorded in backend progress.
 
-## Dependencies and boundaries
-
-- Express 5, TypeScript, Prisma 6, PostgreSQL, Zod, bcryptjs, and the existing migrations are retained.
-- Vitest is updated from 3 to 4.1.12 to remove audited mocker/worker vulnerabilities; the existing rule tests remain unchanged.
-- A scoped npm override pins `@prisma/config`'s `deepmerge-ts` to 8.0.2 to address [GHSA-ggr8-5vv4-36mx](https://github.com/RebeccaStevens/deepmerge-ts/security/advisories/GHSA-ggr8-5vv4-36mx). [Upstream release notes](https://github.com/RebeccaStevens/deepmerge-ts/releases/tag/v8.0.0) identify changed Map merging and custom-helper types; this project uses ordinary Prisma configuration and none of those custom helpers. Generation, validation, deployment, and schema checks verify the current path. Reassess this override if introducing custom Prisma config or upgrading Prisma; no forced Prisma major migration was used.
-- `express-rate-limit` now uses the PostgreSQL counter store. `connect-pg-simple` remains an unused pre-existing dependency; it is not configured and does not create a second session table.
-- No SMS, courier, GPS, email, payment, or payout provider is implemented. Non-demo OTP requests return `OTP_PROVIDER_UNAVAILABLE`. Demo OTP is test-only. Notifications currently have a read route but no event-driven creation.
+Express 5/TypeScript/Prisma 6/PostgreSQL/Zod and original migration history are retained. Vitest 4 and the scoped `@prisma/config` → `deepmerge-ts` 8.0.2 override address the foundation audit findings; Prisma generation/validation/migrations/build are verified with it. No major ORM migration was introduced. `connect-pg-simple` remains an unused original dependency; sessions use one Prisma pool.

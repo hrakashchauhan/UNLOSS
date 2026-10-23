@@ -1,6 +1,8 @@
 # UNLOSS backend progress
 
-Updated: 23 October 2026 (Asia/Kolkata). The latest user instruction authorizes all remaining backend phases sequentially, with tested checkpoints.
+Updated: 23 October 2026 (Asia/Kolkata). **All nine agreed MVP backend phases are implemented and verified.** Phases 1–2 were completed earlier; this continuation completed 3–9 sequentially. Production release, partner identity, real OTP delivery and browser/physical-print QA remain explicitly gated. The user confirmed that partner verification stays outside this scope.
+
+Current verification: **62 unit + 95 PostgreSQL integration tests (157 backend tests)**; **45 current frontend tests**; actual frontend adapters against the live API; compiled restart/logout; lint/typecheck/build; four migrations/no drift; full and production backend audits and frontend production audit report zero vulnerabilities. See [current integration handoff](BACKEND_INTEGRATION.md) and [backend setup](../apps/api/README.md). The historical audit below is preserved to explain the completed fixes.
 
 ## Repository and coordination audit
 
@@ -10,7 +12,7 @@ Updated: 23 October 2026 (Asia/Kolkata). The latest user instruction authorizes 
 - Read `docs/API_CONTRACT.md` v1.0, frontend API adapter/auth/public preview, `docs/FRONTEND_PROGRESS.md`, root README, schema/migration/seed, scripts, dependencies, and all existing backend routes/tests. No prior backend progress or additional integration doc existed. No applicable `AGENTS.md` was found in the workspace or ancestors.
 - The separate frontend chat is not available through this session's agent messaging. This document is the backend handoff; direct acknowledgement has **not** been obtained. No shared contract, frontend file, root configuration, or frontend progress file is edited. No merge into `main` is performed.
 
-## Phase audit and next work
+## Historical audit after Phase 2 — superseded by completion records below
 
 | Phase | Audited state and remaining acceptance criteria |
 | --- | --- |
@@ -93,7 +95,7 @@ Manual testing used only the retained local test cluster and ignored generated c
 
 ## Boundaries
 
-No destructive migration, user-data reset, force push, frontend commit, unsupported external notification, courier/GPS evidence, or real payout is introduced. Existing MVP handlers remain explicitly unverified where noted. All remaining backend phases are now authorized.
+No destructive migration, user-data reset, force push, frontend commit, unsupported external notification, courier/GPS evidence, or real payout is introduced. The historical limitations above describe earlier checkpoints; current verified behavior and remaining release gates are in the final handoff.
 
 
 ## Phase 3 completed — orders and history
@@ -147,3 +149,31 @@ No destructive migration, user-data reset, force push, frontend commit, unsuppor
 - Tests added: reporting unit/integration suites for real workflows reconciled to exact JSON/CSV/notifications, leap years, month/year boundaries, invalid month arrays, empty reports, CSV safety and rollback on notification failure. Test cleanup now removes its own generated notifications. An initial isolation test caught omission of the existing notification sellerId field; restored compatibility and reran the full suite without weakening it.
 - Actual checks: lint/typecheck/build, **61 unit + 91 PostgreSQL integration tests (152 total)** passed. No migration or dependency change.
 - Re-read frontend checkpoint `f4fd8c4` and its current API adapter, contract implementation notes and dependency/proposal docs. Original endpoint/request interfaces are unchanged. The user explicitly selected finishing the agreed backend while keeping partner verification gated. Partner identity/reviewer/evidence APIs remain unagreed and outside these nine phases; do not enable the frontend's public-write gate on this branch.
+
+
+## Phase 9 completed — integration and final QA
+
+- Read the current frontend checkpoint `f4fd8c4`, API contract/adapter, dependency handoff and partner proposal. User explicitly chose to keep partner verification gated. No frontend source, shared contract, frontend progress, root README or frontend commit was edited/recommitted.
+- Readiness now checks all application tables and workflow columns; missing workflow migrations fail safely. Added delivery/customer-decision IP and token limits, explicit Retry-After for resend cooldown, and explicit flat order response allowlists. Production remains loopback/gated pending deployment/provider/partner integration; stale comments now identify those actual boundaries.
+- Optional `SEED_SAMPLE_ORDERS=true` creates labelled synthetic created/dispatched/returned examples under a seller lock, preserving edits on rerun and never pre-crediting rewards. Default stays false. Tests cover concurrent seeding, preservation, demo/production guards, forged ownership/actor/acceptance fields, response contract and durable public mutation budgets.
+- Added `test/frontend-live-check.ts` and `test:frontend`: loads the actual frontend modules from a chosen checkout using its installed Vite; runs their real fetch adapters against HTTP/PostgreSQL with a Node cookie/Origin transport shim. Login/create/list/detail/dispatch/OTP/accept/handoff/retry/reward/notifications/report/CSV/logout all pass. Frontend release gate is asserted false. No browser/layout/print claim. Temporary Vite files are isolated under a verified temporary directory and removed.
+- Rewrote backend README/environment notes and added `docs/BACKEND_INTEGRATION.md` with exact behavior, setup, checkpoints, reconciliation, ownership and remaining gates. Original master and migrations are preserved.
+
+### Final checks actually executed
+
+| Check | Result |
+| --- | --- |
+| Backend lint, typecheck, compiled build | Passed |
+| Backend unit/foundation tests | **62 passed**, 6 files |
+| PostgreSQL integration tests | **95 passed**, 10 files; no skips |
+| Current frontend tests at f4fd8c4 | **45 passed**, 11 files |
+| Current frontend lint, typecheck, production build | Passed; tracked frontend files unchanged |
+| Actual frontend adapters with live API/PostgreSQL | Passed twice; UI release gate unchanged |
+| Prisma generate/validate/deploy/status/schema diff | Passed; four applied migrations, no pending migrations or schema drift |
+| Seed CLI | Passed twice with default seller-only behavior and twice with optional synthetic orders; preservation/concurrent-seed tests pass |
+| Compiled Node restart | Readiness/login 200; same cookie restored after a full process restart (200); logout 204; revoked cookie 401; both processes drained/exited |
+| Dependency audits | Backend full/production and frontend production: **0 vulnerabilities** |
+
+Final runtime source has no remaining legacy dense route implementation, explicit-any or TODO/FIXME markers. Security review covered owner predicates, bound SQL, row locks, proof/attempt expiry, transaction boundaries, public serializers, notification/reward rollback and response errors. This is evidence for the implemented MVP, not a claim of perfection or production deployment.
+
+Git review stages backend-owned files/docs only. Secrets are checked against the actual ignored environment without printing them. Each earlier checkpoint's remote SHA was verified. Final branch/PR hash is verified after commit; no force push, history rewrite, destructive reset, main merge or original untracked-backend overwrite is performed. Local synthetic DB and ignored configuration are retained; test API processes and PostgreSQL are stopped after verification.

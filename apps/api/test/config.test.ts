@@ -34,7 +34,7 @@ describe('configuration', () => {
     expect(() => testConfig({ NODE_ENV: 'production', DEMO_MODE: 'true' })).toThrow(ConfigurationError);
     expect(() => testConfig({ NODE_ENV: 'production' })).toThrow(ConfigurationError);
   });
-  it('blocks production until the audited legacy security gaps are closed', () => {
+  it('keeps production gated pending deployment and live integrations', () => {
     expect(() => assertRuntimeSupported(testConfig({ NODE_ENV: 'production', APP_ORIGIN: 'https://unloss.example' })))
       .toThrow('Production serving is disabled');
   });

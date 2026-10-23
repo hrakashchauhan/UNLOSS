@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { Logger } from './logger.js';
 
 export class HttpError extends Error {
-  constructor(public readonly code: string, message: string, public readonly status = 400) { super(message); }
+  constructor(public readonly code: string, message: string, public readonly status = 400, public readonly retryAfter?: number) { super(message); }
 }
 
 export const err = (code: string, message: string, status = 400) => new HttpError(code, message, status);
@@ -40,6 +40,7 @@ export function errorHandler(logger: Logger): ErrorRequestHandler {
     let details: { path: string; code: string }[] | undefined;
     if (error instanceof HttpError) {
       ({ status, code, message } = error);
+      if (error.retryAfter) res.setHeader('Retry-After', error.retryAfter);
     } else if (error instanceof z.ZodError) {
       status = 400; code = 'VALIDATION_ERROR'; message = 'Request validation failed';
       // Zod messages can embed user input (including credentials); return field paths/codes only.

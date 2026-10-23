@@ -57,5 +57,9 @@ export function createRateLimits(prisma: PrismaClient, config: Config, logger: L
     otpRequestToken: limit('otp-request-token', 5, 60 * 60_000, req => String(req.params.token)),
     otpVerifyIp: limit('otp-verify-ip', 30, 15 * 60_000, remoteAddressKey),
     otpVerifyToken: limit('otp-verify-token', 10, 15 * 60_000, req => String(req.params.token)),
+    deliveryIp: limit('delivery-ip', 60, 15 * 60_000, remoteAddressKey),
+    deliveryToken: limit('delivery-token', 20, 15 * 60_000, req => String(req.params.token)),
+    decisionIp: limit('decision-ip', 30, 15 * 60_000, remoteAddressKey),
+    decisionToken: limit('decision-token', 10, 15 * 60_000, req => String(req.params.token)),
   };
 }

@@ -53,6 +53,8 @@ export function createApp({ config, prisma, logger, isShuttingDown = () => false
   registerAuthRoutes(app, prisma, config, store, limits);
   app.post('/api/customer/:token/request-otp', limits.otpRequestIp, limits.otpRequestToken);
   app.post('/api/customer/:token/verify-otp', limits.otpVerifyIp, limits.otpVerifyToken);
+  app.post('/api/customer/:token/decision', limits.decisionIp, limits.decisionToken);
+  app.post('/api/delivery/:token', limits.deliveryIp, limits.deliveryToken);
   registerRoutes(app, prisma, config);
   app.use(notFound);
   app.use(errorHandler(logger));
