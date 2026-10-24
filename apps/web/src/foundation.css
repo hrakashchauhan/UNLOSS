@@ -371,6 +371,46 @@ dd { margin: 2px 0 12px; overflow-wrap: anywhere; }
     width: 70mm !important;
     height: 70mm !important;
   }
+
+  /* QR labels live inside the app shell, so keep the shell printable while
+     hiding its navigation and other page content. */
+  body:has(.qr-sheet, .qr-print-only-sheet) .app-shell {
+    display: block !important;
+    min-height: 0 !important;
+  }
+
+  body:has(.qr-sheet, .qr-print-only-sheet) .main-area {
+    display: block !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+  }
+
+  body:has(.qr-sheet, .qr-print-only-sheet) * {
+    visibility: hidden !important;
+  }
+
+  body:has(.qr-sheet) .qr-sheet,
+  body:has(.qr-sheet) .qr-sheet * ,
+  body:has(.qr-print-only-sheet) .qr-print-only-sheet,
+  body:has(.qr-print-only-sheet) .qr-print-only-sheet * {
+    visibility: visible !important;
+  }
+
+  body:has(.qr-sheet) .qr-sheet {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  body:has(.qr-print-only-sheet) .qr-print-only-sheet {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100% !important;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }

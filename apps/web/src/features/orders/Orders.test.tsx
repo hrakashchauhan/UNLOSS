@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { MemoryRouter } from 'react-router-dom';
 import jsQR from 'jsqr';
 import { OrdersPage, Timeline, validateOrder } from './Orders';
-import { QrSheet, safeQrUrl } from './QrSheet';
+import { QrSheet, safeQrUrl, TokenCard } from './QrSheet';
 import type { CreateOrderRequest, Event, OrderCreated, RawOrder } from '../../api';
 import { normalizeOrder } from '../../api';
 
@@ -50,6 +50,45 @@ it('decodes both rendered SVG QR matrices back to the exact purpose-specific URL
   expect(decoded).toEqual([created.qr.deliveryUrl, created.qr.customerUrl]);
   expect(safeQrUrl('javascript:alert(1)', 'delivery')).toBeNull();
   expect(safeQrUrl(created.qr.customerUrl, 'delivery')).toBeNull();
+});
+
+it('downloads the generated SVG through a connected link and keeps its blob URL alive briefly', () => {
+  const descriptor = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
+  const revokeDescriptor = Object.getOwnPropertyDescriptor(URL, 'revokeObjectURL');
+  const createObjectURL = vi.fn(() => 'blob:unloss-qr');
+  const revokeObjectURL = vi.fn();
+  vi.useFakeTimers();
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL });
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL });
+  const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+    expect(this.isConnected).toBe(true);
+    expect(this.download).toBe('unloss-delivery-qr.svg');
+  });
+  try {
+    render(<TokenCard purpose="delivery" url={created.qr.deliveryUrl} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Download SVG' }));
+    expect(createObjectURL).toHaveBeenCalledOnce();
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+    expect(screen.getByRole('status').textContent).toContain('download started');
+    vi.advanceTimersByTime(1000);
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:unloss-qr');
+  } finally {
+    vi.useRealTimers();
+    click.mockRestore();
+    if (descriptor) Object.defineProperty(URL, 'createObjectURL', descriptor);
+    else delete (URL as unknown as { createObjectURL?: unknown }).createObjectURL;
+    if (revokeDescriptor) Object.defineProperty(URL, 'revokeObjectURL', revokeDescriptor);
+    else delete (URL as unknown as { revokeObjectURL?: unknown }).revokeObjectURL;
+  }
+});
+
+it('opens the browser print dialog for saving the generated QR sheet as PDF', () => {
+  const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+  render(<MemoryRouter><QrSheet result={created} /></MemoryRouter>);
+  fireEvent.click(screen.getByRole('button', { name: 'Print / save PDF' }));
+  expect(print).toHaveBeenCalledOnce();
+  print.mockRestore();
 });
 
 it('sends search/filter/pagination to the contract without displaying stale results', async () => {

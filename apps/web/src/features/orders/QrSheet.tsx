@@ -17,8 +17,17 @@ export function TokenCard({ purpose, url }: { purpose: 'delivery' | 'customer'; 
   const canvas = useRef<HTMLDivElement>(null);
   function download() {
     const svg = canvas.current?.querySelector('svg'); if (!svg) return;
-    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], {type:'image/svg+xml'}));
-    const anchor = document.createElement('a'); anchor.href=url; anchor.download=`unloss-${purpose}-qr.svg`; anchor.click(); URL.revokeObjectURL(url);
+    const objectUrl = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], {type:'image/svg+xml'}));
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = `unloss-${purpose}-qr.svg`;
+    anchor.style.display = 'none';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    // Keep the blob alive while the browser handles the download click.
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    setFeedback('SVG download started.');
   }
   const absolute = safeQrUrl(url, purpose);
   async function copy() {
@@ -109,7 +118,7 @@ export function QrSheet({ result }: { result: OrderCreated }) {
 
       <div className="form-actions no-print">
         <button className="button primary" onClick={() => window.print()}>
-          Print QR sheet
+          Print / save PDF
         </button>
         <Link className="button subtle" to={`/orders/${encodeURIComponent(order.id)}`}>
           Open order

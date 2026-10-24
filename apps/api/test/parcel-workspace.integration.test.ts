@@ -39,7 +39,7 @@ it('connects distinct verified accounts; rejects outsiders and unverified assign
  expect((await call(2,`/workspace/parcels/${orderId}`)).status).toBe(404);
  expect((await call(0,`/workspace/parcels/${orderId}`)).status).toBe(200);
  const q1=await (await f.request(`/orders/${orderId}/qr`,{})).json();const q2=await (await f.request(`/orders/${orderId}/qr`,{})).json();expect(q1.qr).toEqual(q2.qr);
- const qrRecord=await f.prisma.qrToken.findFirstOrThrow({where:{orderId}});expect(qrRecord.encryptedToken).toMatch(/^v1\./);
+ const qrRecords=await f.prisma.qrToken.findMany({where:{orderId},orderBy:{purpose:'asc'}});expect(qrRecords).toHaveLength(2);expect(qrRecords.map(token=>token.purpose)).toEqual(['CUSTOMER','DELIVERY']);expect(qrRecords.every(token=>token.orderId===orderId&&token.encryptedToken.startsWith('v1.'))).toBe(true);
  expect((await call(0,`/workspace/parcels/${orderId}/qr`)).status).toBe(200);
  expect((await call(1,`/workspace/parcels/${orderId}/qr`)).status).toBe(200);
  expect((await f.request('/events/poll',undefined,false)).status).toBe(401);
