@@ -81,19 +81,15 @@ export function DeliveryDashboard() {
     setLoading(true);
     setError('');
     try {
-      const [pendingRes, earningsRes] = await Promise.allSettled([
-        api<{ items: Order[] }>('/delivery/pending'),
+      const [pendingRes, earningsRes] = await Promise.all([
+        api<{ items: Order[]; available?: Order[] }>('/delivery/pending'),
         api<{ items: EarningItem[]; eligiblePaise: number; payoutAccount: PayoutAccountData | null }>('/delivery/earnings'),
       ]);
-      if (pendingRes.status === 'fulfilled') {
-        setPendingOrders(pendingRes.value.items || []);
-      }
-      if (earningsRes.status === 'fulfilled') {
-        setEarnings(earningsRes.value.items || []);
-        setEligiblePaise(earningsRes.value.eligiblePaise || 0);
-        setPayoutAccount(earningsRes.value.payoutAccount || null);
-        if (earningsRes.value.payoutAccount?.upiId) setUpiId(earningsRes.value.payoutAccount.upiId);
-      }
+      setPendingOrders([...(pendingRes.items || []), ...(pendingRes.available || [])]);
+      setEarnings(earningsRes.items || []);
+      setEligiblePaise(earningsRes.eligiblePaise || 0);
+      setPayoutAccount(earningsRes.payoutAccount || null);
+      if (earningsRes.payoutAccount?.upiId) setUpiId(earningsRes.payoutAccount.upiId);
     } catch (e) {
       setError(errText(e));
     } finally {
@@ -224,7 +220,7 @@ export function DeliveryDashboard() {
             <div>
               <div className="eyebrow" style={{ color: 'var(--muted)', fontSize: '.8rem', letterSpacing: '.06em' }}>DELIVERY PROFILE</div>
               <h2 style={{ margin: '4px 0 2px', fontSize: '1.25rem' }}>{user?.name || 'Authorized Delivery Partner'}</h2>
-              <small className="muted">{user?.phone || '+91 98765 43211'} · Swift Express Logistics · Ref: SWIFT-DEL-042</small>
+              <small className="muted">{user?.email || 'Delivery account'} · Delivery assignment and approval are checked for each parcel.</small>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <span style={{ fontSize: '.85rem', color: 'var(--muted)' }}>Account Review Status:</span>

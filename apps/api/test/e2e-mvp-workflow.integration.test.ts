@@ -188,7 +188,7 @@ describe('UNLOSS Final MVP End-to-End Directive Workflow', () => {
     });
     expect(dispatchRes.status).toBe(200);
 
-    // Courier webhook simulates live carrier milestone
+    // Unsigned webhook payloads must never be accepted as carrier proof.
     const webhookRes = await fetch(`${baseUrl}/api/integrations/aftership/webhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: config.appOrigin },
@@ -200,7 +200,7 @@ describe('UNLOSS Final MVP End-to-End Directive Workflow', () => {
         providerEventId: `evt_${Date.now()}`,
       }),
     });
-    expect(webhookRes.status).toBe(200);
+    expect(webhookRes.status).toBe(503);
 
     // -------------------------------------------------------------------------
     // STEP 4: Delivery person claims the parcel — approval enforced by backend

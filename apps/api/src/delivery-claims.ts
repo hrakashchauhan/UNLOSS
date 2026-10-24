@@ -17,15 +17,23 @@ export function registerDeliveryClaimRoutes(app: Express, prisma: PrismaClient, 
 
   app.get('/api/delivery/pending', ...deliveryOnly, async (req, res) => {
     const user = currentUser(res)!;
-    if (!config.demo) {
-      const profile = await prisma.deliveryProfile.findUnique({ where: { userId: user.id } });
-      if (profile?.reviewStatus !== 'APPROVED') throw err('FORBIDDEN', 'Delivery account requires review', 403);
-      const orders = await prisma.order.findMany({ where: { status: 'OUT_FOR_DELIVERY', claims: { some: { deliveryUserId: user.id, status: 'APPROVED' } } }, include: { shipment: true }, take: 50 });
-      res.json({ items: orders });
-      return;
-    }
-    const orders = await prisma.order.findMany({ where: { status: 'OUT_FOR_DELIVERY', claims: { none: { deliveryUserId: user.id, status: { in: ['PENDING', 'APPROVED'] } } } }, include: { shipment: true }, take: 50, orderBy: { createdAt: 'desc' } });
-    res.json({ items: orders });
+    const profile = await prisma.deliveryProfile.findUnique({ where: { userId: user.id } });
+    if (profile?.reviewStatus !== 'APPROVED') throw err('FORBIDDEN', 'Delivery account requires review', 403);
+    const [assigned, available] = await Promise.all([
+      prisma.order.findMany({
+        where: { status: 'OUT_FOR_DELIVERY', claims: { some: { deliveryUserId: user.id, status: 'APPROVED' } } },
+        select: { id: true, sellerReference: true, itemName: true, status: true, deliveryAttempt: true, updatedAt: true },
+        take: 50,
+        orderBy: { updatedAt: 'desc' },
+      }),
+      config.demo ? prisma.order.findMany({
+        where: { status: 'OUT_FOR_DELIVERY', claims: { none: { status: { in: ['PENDING', 'APPROVED'] } } } },
+        select: { id: true, sellerReference: true, itemName: true, status: true, deliveryAttempt: true, updatedAt: true },
+        take: 50,
+        orderBy: { createdAt: 'desc' },
+      }) : Promise.resolve([]),
+    ]);
+    res.json({ items: assigned, available });
   });
 
   app.post('/api/orders/:id/claim', ...deliveryOnly, async (req, res) => {

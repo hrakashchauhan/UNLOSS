@@ -14,6 +14,8 @@ The API uses port 3001 and the retained PostgreSQL test installation uses port 5
 
 With local `DEMO_MODE=true`, `db:seed` also creates fictional role accounts: the configured `SEED_SELLER_EMAIL`, `delivery@unloss.local`, `customer@unloss.local`, and `admin@unloss.local`. They use the locally configured seed password; the ignored `.local/LOCAL_ACCESS.txt` contains this machine's access instructions. The seeded delivery profile is explicitly synthetic and pre-approved only for the local demo. Do not use these accounts or credentials outside local development. Public signup can create customers; a delivery signup creates a pending application and administrator review activates courier access; seller access is provisioned by an administrator.
 
+In the login screen's local **Quick Test Roles**, choose Seller, Delivery person, Customer, or Admin, then enter the `SEED_SELLER_PASSWORD` from your local `apps/api/.env`. Seeding copies only its password hash to these fictional local accounts; no default or production credentials are provided. The separate customer and courier portal routes use only the signed-in account's assigned parcel records.
+
 Customer accounts see only parcels assigned to their user ID. Approved couriers see only parcels assigned through their delivery claim. For parcel handoff, the customer opens their personal QR and completes OTP acceptance; the courier scans their delivery QR, shares a fresh location, then records handoff. Local mode labels its test OTP and simulated ₹5 credit; no SMS or payout occurs.
 
 If Node services have stopped, with PostgreSQL running, use two terminals from the repository root:

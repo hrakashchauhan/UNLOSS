@@ -94,7 +94,9 @@ export function registerParcelWorkspace(app: Express, prisma: PrismaClient, conf
   });
   app.post('/api/workspace/scan/:purpose/:token', auth, signedIn, verified, async (req, res) => {
     const purpose = z.enum(['customer','delivery']).parse(req.params.purpose).toUpperCase();
-    const userId = currentUser(res)!.id;
+    const user = currentUser(res);
+    if (!user) throw err('FORBIDDEN', 'QR checks require the assigned Google-verified customer or courier account', 403);
+    const userId = user.id;
     const result = await prisma.$transaction(async tx => {
       const token = await tx.qrToken.findFirst({ where: { tokenHash: hashToken(String(req.params.token)), purpose, revokedAt: null, expiresAt: { gt: new Date() } } });
       if (!token) throw err('NOT_FOUND', 'QR unavailable', 404);

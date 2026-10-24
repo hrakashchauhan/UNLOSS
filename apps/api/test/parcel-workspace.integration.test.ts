@@ -39,9 +39,17 @@ it('connects distinct verified accounts; rejects outsiders and unverified assign
  expect((await call(2,`/workspace/parcels/${orderId}`)).status).toBe(404);
  expect((await call(0,`/workspace/parcels/${orderId}`)).status).toBe(200);
  const q1=await (await f.request(`/orders/${orderId}/qr`,{})).json();const q2=await (await f.request(`/orders/${orderId}/qr`,{})).json();expect(q1.qr).toEqual(q2.qr);
- const qrRecords=await f.prisma.qrToken.findMany({where:{orderId},orderBy:{purpose:'asc'}});expect(qrRecords).toHaveLength(2);expect(qrRecords.map(token=>token.purpose)).toEqual(['CUSTOMER','DELIVERY']);expect(qrRecords.every(token=>token.orderId===orderId&&token.encryptedToken.startsWith('v1.'))).toBe(true);
+ const qrRecords=await f.prisma.qrToken.findMany({where:{orderId},orderBy:{purpose:'asc'}});expect(qrRecords).toHaveLength(2);expect(qrRecords.map(token=>token.purpose)).toEqual(['CUSTOMER','DELIVERY']);expect(qrRecords.every(token=>token.orderId===orderId&&token.encryptedToken?.startsWith('v1.'))).toBe(true);
  expect((await call(0,`/workspace/parcels/${orderId}/qr`)).status).toBe(200);
  expect((await call(1,`/workspace/parcels/${orderId}/qr`)).status).toBe(200);
+ expect((await f.request(`/workspace/scan/delivery/${new URL(q1.qr.deliveryUrl).pathname.split('/').pop()}`,{})).status).toBe(403);
+ const dispatched=await f.create(); await f.dispatch(dispatched.order.id);
+ const available=await call(1,'/delivery/pending'); expect(available.status).toBe(200);
+ const availableBody=await available.json(); expect(availableBody.available.some((o:{id:string})=>o.id===dispatched.order.id)).toBe(true);
+ expect(JSON.stringify(availableBody.available.find((o:{id:string})=>o.id===dispatched.order.id))).not.toMatch(/customerName|customerPhone|addressLine|postalCode|shipment|email/);
+ expect(availableBody.items).toEqual([]);
+ const earnings=await call(1,'/delivery/earnings'); expect(earnings.status).toBe(200);
+ const payout=await call(1,'/delivery/payout-account',{method:'UPI',upiId:'synthetic@testbank',accountName:'Synthetic courier'}); expect(payout.status).toBe(200);
  expect((await f.request('/events/poll',undefined,false)).status).toBe(401);
  const events=await (await call(2,'/events/poll?since=2020-01-01')).json();expect(events.items).toHaveLength(0);
 });

@@ -15,12 +15,13 @@ import { registerLiveEventRoutes } from './live-events.js';
 export function registerRoutes(app: Express, prisma: PrismaClient, config: Config) {
   registerParcelWorkspace(app, prisma, config);
   registerOrderRoutes(app, prisma, config);
+  // Fixed authenticated routes must precede the generic public /delivery/:token route.
+  registerDeliveryClaimRoutes(app, prisma, config);
+  registerFundingRoutes(app, prisma, config);
   registerPublicRoutes(app, prisma, config);
   registerReportingRoutes(app, prisma, config);
   registerProductRoutes(app, prisma, config);
   registerShipmentRoutes(app, prisma, config);
-  registerDeliveryClaimRoutes(app, prisma, config);
-  registerFundingRoutes(app, prisma, config);
   registerAppNotificationRoutes(app, prisma, config);
   registerLiveEventRoutes(app, prisma, config);
 }

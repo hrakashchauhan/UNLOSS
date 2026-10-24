@@ -374,7 +374,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
 
   function fillDemo(demoEmail: string, targetPath: string) {
     setEmail(demoEmail);
-    setPassword('0wEU9db2P063yo_R0GsEr4NP');
+    setPassword('');
     setActiveTab('signin');
     setWorkspaceChoice(targetPath === '/dashboard' ? 'SELLER' : targetPath === '/delivery-portal' ? 'DELIVERY' : targetPath === '/customer-portal' ? 'CUSTOMER' : 'AUTO');
     if (returnTo === '/dashboard' && targetPath !== '/dashboard') {
@@ -482,7 +482,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
               <span style={{ fontSize: '11px', fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 Quick Test Roles:
               </span>
-              <span style={{ fontSize: '10px', color: '#94a3b8' }}>1-click fill</span>
+              <span style={{ fontSize: '10px', color: '#94a3b8' }}>Fill account</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
               <button type="button" className="button subtle" style={{ fontSize: '11px', padding: '4px', minHeight: '30px' }} onClick={() => fillDemo('demo@unloss.local', '/dashboard')}>
@@ -498,6 +498,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
                 Admin
               </button>
             </div>
+            <p className="muted" style={{ fontSize: '11px', margin: '8px 0 0' }}>Enter your locally configured seed password. These fictional accounts are for local testing only.</p>
           </div>
         )}
 

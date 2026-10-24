@@ -22,21 +22,10 @@ export function registerShipmentRoutes(app: Express, prisma: PrismaClient, confi
     res.status(201).json({ shipment: result, provider: 'AFTERSHIP' });
   });
 
-  app.post('/api/integrations/aftership/webhook', async (req, res) => {
-    if (!config.demo) throw err('PROVIDER_UNAVAILABLE', 'Verified courier webhooks are not configured', 503);
-    // Signed webhook verification to be enforced in production; in local demo we accept structured updates with idempotency
-    const v = z.object({ trackingNumber: z.string(), providerShipmentId: z.string().optional(), status: z.string(), message: z.string().optional(), occurredAt: z.string(), providerEventId: z.string() }).parse(req.body);
-    const shipment = await prisma.shipment.findFirst({ where: { trackingNumber: v.trackingNumber } });
-    if (!shipment) return res.status(202).json({ accepted: false });
-    const occurredAt = new Date(v.occurredAt);
-    const existing = await prisma.shipmentEvent.findUnique({ where: { providerEventId: v.providerEventId } });
-    if (existing) return res.status(200).json({ accepted: true, duplicate: true });
-    await prisma.$transaction(async tx => {
-      await tx.shipmentEvent.create({ data: { shipmentId: shipment.id, providerEventId: v.providerEventId, status: v.status, message: v.message, occurredAt, metadata: req.body as object } });
-      await tx.shipment.update({ where: { id: shipment.id }, data: { courierStatus: v.status, lastCourierEventAt: occurredAt, lastSyncedAt: new Date() } });
-      await tx.orderEvent.create({ data: { orderId: shipment.orderId, eventType: 'COURIER_UPDATE', toStatus: (await tx.order.findUnique({ where: { id: shipment.orderId } }))?.status, actorType: 'SYSTEM', source: 'INTEGRATION', metadata: { courierStatus: v.status, provider: 'AFTERSHIP', occurredAt: occurredAt.toISOString() } } });
-    });
-    res.status(200).json({ accepted: true });
+  app.post('/api/integrations/aftership/webhook', (_req, _res, next) => {
+    // This endpoint has no configured signature verification. Never accept provider claims
+    // from unauthenticated callers, including local demo mode.
+    next(err('PROVIDER_UNAVAILABLE', 'Verified courier webhooks are not configured', 503));
   });
 
   app.get('/api/orders/:id/shipment', auth, async (req, res) => {
