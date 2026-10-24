@@ -15,6 +15,7 @@ export interface AuthUser {
   deliveryStatus?: string;
 }
 type AuthResult = { seller?: Seller | null; user?: AuthUser | null };
+type WorkspaceChoice = 'AUTO' | 'SELLER' | 'DELIVERY' | 'CUSTOMER';
 
 export type UserRole = 'SELLER' | 'DELIVERY' | 'CUSTOMER' | 'ADMIN';
 
@@ -245,12 +246,28 @@ export function LoginRoute() {
   return <AuthView returnTo={target} />;
 }
 
+export function authenticatedDestination(result: AuthResult, choice: WorkspaceChoice, returnTo: string) {
+  if (returnTo.startsWith('/scan/') || returnTo.startsWith('/parcels')) return returnTo;
+  if (choice === 'SELLER') return '/dashboard';
+  if (choice === 'DELIVERY') return '/delivery-portal';
+  if (choice === 'CUSTOMER') return '/customer-portal';
+  if (returnTo === '/dashboard' && result.seller) return '/dashboard';
+  if (returnTo === '/delivery-portal' && (result.user?.roles.includes('DELIVERY') || result.user?.deliveryStatus)) return '/delivery-portal';
+  if (returnTo === '/customer-portal' && result.user?.roles.includes('CUSTOMER')) return '/customer-portal';
+  if (result.seller || result.user?.roles.includes('SELLER')) return '/dashboard';
+  if (result.user?.roles.includes('ADMIN')) return '/admin';
+  if (result.user?.roles.includes('DELIVERY')) return '/delivery-portal';
+  if (result.user?.roles.includes('CUSTOMER')) return '/customer-portal';
+  return returnTo;
+}
+
 function AuthView({ returnTo }: { returnTo: string }) {
   const { signIn, register, signInWithGoogle, requestPhoneOtp, verifyPhoneOtp } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<'signin' | 'register' | 'phone'>('signin');
   const [selectedRole, setSelectedRole] = useState<'SELLER' | 'DELIVERY' | 'CUSTOMER'>('CUSTOMER');
+  const [workspaceChoice, setWorkspaceChoice] = useState<WorkspaceChoice>(returnTo === '/dashboard' ? 'AUTO' : returnTo === '/delivery-portal' ? 'DELIVERY' : returnTo === '/customer-portal' ? 'CUSTOMER' : 'AUTO');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
 
@@ -278,15 +295,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
   const [otpMessage, setOtpMessage] = useState('');
 
   function routeAuthenticated(result: AuthResult) {
-    if (returnTo.startsWith('/scan/') || returnTo.startsWith('/parcels')) {
-      navigate(returnTo, { replace: true });
-      return;
-    }
-    const roles = result.user?.roles || [];
-    if (result.seller || roles.includes('SELLER')) navigate('/dashboard', { replace: true });
-    else if (roles.includes('ADMIN')) navigate('/admin', { replace: true });
-    else if (roles.includes('DELIVERY')) navigate('/delivery-portal', { replace: true });
-    else navigate('/customer-portal', { replace: true });
+    navigate(authenticatedDestination(result, workspaceChoice, returnTo), { replace: true });
   }
 
   // Handle Standard Sign In
@@ -330,7 +339,8 @@ function AuthView({ returnTo }: { returnTo: string }) {
     if (pending) return;
     setPending(true); setError('');
     try {
-      const result = await signInWithGoogle(credential, selectedRole);
+      const googleRole = workspaceChoice === 'SELLER' ? 'SELLER' : workspaceChoice === 'DELIVERY' || selectedRole === 'DELIVERY' ? 'DELIVERY' : 'CUSTOMER';
+      const result = await signInWithGoogle(credential, googleRole);
       routeAuthenticated(result);
     } catch (cause) { setError(errText(cause)); }
     finally { setPending(false); }
@@ -366,6 +376,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
     setEmail(demoEmail);
     setPassword('0wEU9db2P063yo_R0GsEr4NP');
     setActiveTab('signin');
+    setWorkspaceChoice(targetPath === '/dashboard' ? 'SELLER' : targetPath === '/delivery-portal' ? 'DELIVERY' : targetPath === '/customer-portal' ? 'CUSTOMER' : 'AUTO');
     if (returnTo === '/dashboard' && targetPath !== '/dashboard') {
       navigate(`/login?returnTo=${encodeURIComponent(targetPath)}`, { replace: true });
     }
@@ -445,6 +456,24 @@ function AuthView({ returnTo }: { returnTo: string }) {
             Phone OTP
           </button>
         </div>
+
+        {activeTab === 'signin' && (
+          <section aria-label="Choose account dashboard" style={{ marginBottom: '18px' }}>
+            <p style={{ fontSize: '11px', fontWeight: 700, color: '#475569', margin: '0 0 8px' }}>WHICH ACCOUNT ARE YOU USING?</p>
+            <div role="group" aria-label="Account dashboard" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '7px' }}>
+              {([['CUSTOMER', 'Customer'], ['DELIVERY', 'Delivery person'], ['SELLER', 'Seller']] as const).map(([choice, label]) => (
+                <button key={choice} type="button" className="button subtle" aria-pressed={workspaceChoice === choice} onClick={() => {
+                  setWorkspaceChoice(choice);
+                  setSelectedRole(choice === 'DELIVERY' ? 'DELIVERY' : 'CUSTOMER');
+                  setError('');
+                }} style={{ minHeight: '36px', padding: '4px', borderColor: workspaceChoice === choice ? '#047857' : '#e2e8f0', color: workspaceChoice === choice ? '#047857' : '#475569' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {workspaceChoice === 'SELLER' && <p className="muted" style={{ fontSize: '10px', marginTop: '6px' }}>Seller access requires administrator authorization. Use the Google account registered to your authorized seller email, or your assigned credentials.</p>}
+          </section>
+        )}
 
         {/* Quick Demo Fill Pill Box */}
         {DEMO_ENABLED && (

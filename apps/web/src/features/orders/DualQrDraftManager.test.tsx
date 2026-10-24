@@ -89,6 +89,30 @@ it('creates a draft immediately upon entering a product name and displays dual Q
   expect(svgs.length).toBeGreaterThanOrEqual(2);
 });
 
+it('loads the real saved QR pair when reopening a product from the saved library', async () => {
+  const savedDeliveryUrl = 'https://unloss.example/draft/delivery/saved-delivery-token';
+  const savedCustomerUrl = 'https://unloss.example/draft/customer/saved-customer-token';
+  const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+    if (url.endsWith('/drafts') && (!options?.method || options.method === 'GET')) {
+      return Promise.resolve(Response.json({ items: [mockDraft] }));
+    }
+    if (url.endsWith(`/drafts/${mockDraft.id}/reprint`) && options?.method === 'POST') {
+      return Promise.resolve(Response.json({ draftId: mockDraft.id, productName: mockDraft.product.name, quantity: mockDraft.quantity, qr: { deliveryUrl: savedDeliveryUrl, customerUrl: savedCustomerUrl } }));
+    }
+    return Promise.resolve(Response.json({}));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  vi.stubGlobal('scrollTo', vi.fn());
+
+  render(<MemoryRouter><DualQrDraftManager /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole('button', { name: 'Open product & QR' }));
+
+  expect(await screen.findByText(/Saved product and current QR labels loaded/i)).toBeTruthy();
+  expect(screen.getByText(savedDeliveryUrl)).toBeTruthy();
+  expect(screen.getByText(savedCustomerUrl)).toBeTruthy();
+  expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining(`/drafts/${mockDraft.id}/reprint`), expect.objectContaining({ method: 'POST' }));
+});
+
 it('copies delivery QR link to clipboard', async () => {
   const fetchMock = vi.fn((url: string, options?: RequestInit) => {
     if (url.endsWith('/drafts') && options?.method === 'POST') {

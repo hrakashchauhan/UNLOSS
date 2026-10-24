@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from '../../App';
+import { authenticatedDestination } from './Auth';
 
 const seller = { id: 'seller-1', name: 'Demo Seller', email: 'demo@unloss.local' };
 const noSession = () => Response.json({ error: { code: 'UNAUTHENTICATED', message: 'Sign in required' } }, { status: 401 });
@@ -96,5 +97,23 @@ describe('seller session', () => {
     render(<MemoryRouter initialEntries={['/dashboard']}><App /></MemoryRouter>);
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/dashboard/summary'))).toBe(true));
     expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeTruthy();
+  });
+});
+
+describe('role dashboard selection', () => {
+  const courier = { user: { id: 'courier-1', name: 'Test Courier', email: 'courier@example.invalid', phone: null, roles: ['DELIVERY', 'CUSTOMER'], deliveryStatus: 'APPROVED' } };
+  const customer = { user: { id: 'customer-1', name: 'Test Customer', email: 'customer@example.invalid', phone: null, roles: ['CUSTOMER'] } };
+
+  it('routes a signed-in multi-role account to the selected customer or delivery dashboard', () => {
+    expect(authenticatedDestination(courier, 'CUSTOMER', '/dashboard')).toBe('/customer-portal');
+    expect(authenticatedDestination(courier, 'DELIVERY', '/dashboard')).toBe('/delivery-portal');
+  });
+
+  it('shows a pending delivery applicant the approval status screen without granting courier access', () => {
+    expect(authenticatedDestination({ user: { ...customer.user, deliveryStatus: 'PENDING' } }, 'DELIVERY', '/dashboard')).toBe('/delivery-portal');
+  });
+
+  it('preserves QR scan destinations through sign-in', () => {
+    expect(authenticatedDestination(customer, 'DELIVERY', '/scan/customer/secure-token')).toBe('/scan/customer/secure-token');
   });
 });

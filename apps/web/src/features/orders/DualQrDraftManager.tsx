@@ -221,31 +221,36 @@ export function DualQrDraftManager({ onOrderActivated }: { onOrderActivated?: (o
     }
   }
 
-  function handleReopen(draft: OrderDraft) {
-    const deliveryToken = draft.tokens?.find(t => t.purpose === 'DELIVERY')?.encryptedToken;
-    const customerToken = draft.tokens?.find(t => t.purpose === 'CUSTOMER')?.encryptedToken;
-    const origin = window.location.origin;
+  async function handleReopen(draft: OrderDraft) {
+    setLoading(true);
+    setError('');
+    try {
+      // The saved token in the list response is encrypted at rest. Ask the
+      // seller-authorized endpoint for the usable pair; it also renews expired QR codes.
+      const saved = await draftsApi.reprint(draft.id);
+      setActiveDraft({
+        draft,
+        product: draft.product,
+        qr: saved.qr,
+        status: draft.status === 'ACTIVATED' ? 'ACTIVATED' : 'AWAITING_ACTIVATION',
+      });
 
-    setActiveDraft({
-      draft,
-      product: draft.product,
-      qr: {
-        deliveryUrl: deliveryToken ? `${origin}/draft/delivery/${deliveryToken}` : `${origin}/draft/delivery/${draft.id}`,
-        customerUrl: customerToken ? `${origin}/draft/customer/${customerToken}` : `${origin}/draft/customer/${draft.id}`,
-      },
-      status: draft.status === 'ACTIVATED' ? 'ACTIVATED' : 'AWAITING_ACTIVATION',
-    });
-
-    setRecipientName(draft.recipientName || '');
-    setRecipientPhone(draft.recipientPhone || '');
-    setLine1(draft.addressLine1 || '');
-    setLine2(draft.addressLine2 || '');
-    setCity(draft.city || '');
-    setState(draft.state || '');
-    setPostalCode(draft.postalCode || '');
-    setCourier(draft.courier || '');
-    setTrackingNumber(draft.trackingNumber || '');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+      setRecipientName(draft.recipientName || '');
+      setRecipientPhone(draft.recipientPhone || '');
+      setLine1(draft.addressLine1 || '');
+      setLine2(draft.addressLine2 || '');
+      setCity(draft.city || '');
+      setState(draft.state || '');
+      setPostalCode(draft.postalCode || '');
+      setCourier(draft.courier || '');
+      setTrackingNumber(draft.trackingNumber || '');
+      setSuccess('Saved product and current QR labels loaded.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setError(errText(err));
+    } finally {
+      setLoading(false);
+    }
   }
 
   function downloadSvg(svgId: string, filename: string) {
@@ -668,9 +673,10 @@ export function DualQrDraftManager({ onOrderActivated }: { onOrderActivated?: (o
                       <button
                         className="button subtle"
                         style={{ minHeight: '30px', fontSize: '.78rem', padding: '2px 8px' }}
-                        onClick={() => handleReopen(draft)}
+                        disabled={loading}
+                        onClick={() => void handleReopen(draft)}
                       >
-                        Reopen Dual QR
+                        {loading ? 'Loading QR…' : 'Open product & QR'}
                       </button>
                     </td>
                   </tr>

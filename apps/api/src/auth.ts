@@ -285,59 +285,76 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
       credential: z.string().min(1).max(10000),
       role: z.enum(['SELLER', 'DELIVERY', 'CUSTOMER']).default('CUSTOMER'),
     }).parse(req.body);
-    assertRoleRequestAllowed(input.role);
+    if (input.role !== 'SELLER') assertRoleRequestAllowed(input.role);
     const identity = await verifyGoogleCredential(input.credential, config.googleClientId);
     const v = { email: identity.email, name: identity.name, role: input.role };
 
-    let user: any = await prisma.user.findUnique({
-      where: { googleSubject: identity.subject },
-      include: { memberships: true, deliveryProfile: true },
-    });
-
-    let seller = await prisma.seller.findUnique({ where: { email: v.email } });
-
-    if (!user) {
-      const existingEmail = await prisma.user.findUnique({ where: { email: v.email } });
-      if (existingEmail || seller) throw err('ACCOUNT_LINK_REQUIRED', 'This email already has an account. Sign in with your password.', 409);
-      const dummyPassword = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
-      user = await prisma.user.create({
-        data: {
-          googleSubject: identity.subject,
-          name: v.name,
-          email: v.email,
-          passwordHash: dummyPassword,
-          status: 'ACTIVE',
-          memberships: { create: v.role === 'DELIVERY'
-            ? [{ role: 'CUSTOMER', status: 'ACTIVE' }, { role: 'DELIVERY', status: 'PENDING' }]
-            : { role: 'CUSTOMER', status: 'ACTIVE' } },
-          ...(v.role === 'DELIVERY' ? {
-            deliveryProfile: {
-              create: {
-                employer: 'Not verified',
-                deliveryReference: `GOOG-${randomBytes(4).toString('hex').toUpperCase()}`,
-                reviewStatus: 'PENDING',
-                phoneVerifiedAt: null,
-              },
-            },
-          } : {}),
-          customerProfile: { create: { defaultName: v.name } },
-        },
-        include: { memberships: true, deliveryProfile: true, seller: true },
-      });
-
-      seller = user.seller || null;
+    let user: any = null;
+    let seller: any = null;
+    if (v.role === 'SELLER') {
+      // A verified Google email may enter seller mode only when an authorized
+      // seller record already exists for that exact email. This does not create
+      // or grant a seller role to a new account.
+      seller = await prisma.seller.findUnique({ where: { email: v.email } });
+      if (!seller) throw err('ROLE_ASSIGNMENT_RESTRICTED', 'No administrator-authorized seller account exists for this Google email.', 403);
+      const identityUser = await prisma.user.findUnique({ where: { googleSubject: identity.subject } });
+      if (identityUser && seller.userId !== identityUser.id) throw err('ACCOUNT_LINK_REQUIRED', 'This Google account is linked to a different UNLOSS account.', 409);
+      if (seller.userId) {
+        user = await prisma.user.findUnique({ where: { id: seller.userId }, include: { memberships: true, deliveryProfile: true } });
+        if (!user || user.status !== 'ACTIVE' || user.email?.toLowerCase() !== v.email) throw err('FORBIDDEN', 'The authorized seller account is not active for this Google email.', 403);
+        if (user.googleSubject && user.googleSubject !== identity.subject) throw err('ACCOUNT_LINK_REQUIRED', 'This seller account is linked to a different Google account.', 409);
+        if (!user.googleSubject) user = await prisma.user.update({ where: { id: user.id }, data: { googleSubject: identity.subject }, include: { memberships: true, deliveryProfile: true } });
+      }
     } else {
-      if (user.status !== 'ACTIVE') throw err('FORBIDDEN', 'Account is not active', 403);
-      if (v.role === 'DELIVERY' && !user.deliveryProfile) throw err('DELIVERY_APPLICATION_REQUIRED', 'Sign up for delivery access first so an administrator can review your application.', 403);
-      seller = await prisma.seller.findFirst({ where: { userId: user.id } });
+      user = await prisma.user.findUnique({
+        where: { googleSubject: identity.subject },
+        include: { memberships: true, deliveryProfile: true },
+      });
+      seller = await prisma.seller.findUnique({ where: { email: v.email } });
+
+      if (!user) {
+        const existingEmail = await prisma.user.findUnique({ where: { email: v.email } });
+        if (existingEmail || seller) throw err('ACCOUNT_LINK_REQUIRED', 'This email already has an account. Sign in with your password.', 409);
+        const dummyPassword = await bcrypt.hash(randomBytes(16).toString('hex'), 10);
+        user = await prisma.user.create({
+          data: {
+            googleSubject: identity.subject,
+            name: v.name,
+            email: v.email,
+            passwordHash: dummyPassword,
+            status: 'ACTIVE',
+            memberships: { create: v.role === 'DELIVERY'
+              ? [{ role: 'CUSTOMER', status: 'ACTIVE' }, { role: 'DELIVERY', status: 'PENDING' }]
+              : { role: 'CUSTOMER', status: 'ACTIVE' } },
+            ...(v.role === 'DELIVERY' ? {
+              deliveryProfile: {
+                create: {
+                  employer: 'Not verified',
+                  deliveryReference: `GOOG-${randomBytes(4).toString('hex').toUpperCase()}`,
+                  reviewStatus: 'PENDING',
+                  phoneVerifiedAt: null,
+                },
+              },
+            } : {}),
+            customerProfile: { create: { defaultName: v.name } },
+          },
+          include: { memberships: true, deliveryProfile: true, seller: true },
+        });
+
+        seller = user.seller || null;
+      } else {
+        if (user.status !== 'ACTIVE') throw err('FORBIDDEN', 'Account is not active', 403);
+        if (v.role === 'DELIVERY' && !user.deliveryProfile) throw err('DELIVERY_APPLICATION_REQUIRED', 'Sign up for delivery access first so an administrator can review your application.', 403);
+        seller = await prisma.seller.findFirst({ where: { userId: user.id } });
+      }
     }
 
     await new Promise<void>((resolve, reject) => req.session.regenerate(error => error ? reject(error) : resolve()));
-    req.session.userId = user.id;
-    req.session.credentialVersion = hashToken(user.passwordHash || 'google-session');
+    if (user) req.session.userId = user.id;
     if (seller) {
       req.session.sellerId = seller.id;
     }
+    req.session.credentialVersion = hashToken(seller?.passwordHash || user?.passwordHash || 'google-session');
     req.session.sessionExpiresAt = Date.now() + SESSION_TTL_MS;
     req.session.cookie.expires = new Date(req.session.sessionExpiresAt);
     await store.issue(req.sessionID, req.session);
@@ -345,14 +362,14 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
 
     res.json({
       seller: seller ? { id: seller.id, email: seller.email, name: seller.name } : null,
-      user: {
+      ...(user ? { user: {
         id: user.id,
         name: user.name,
         email: user.email,
         phone: user.phone,
         roles: user.memberships?.filter((m: any) => m.status === 'ACTIVE').map((m: any) => m.role) || [],
         deliveryStatus: user.deliveryProfile?.reviewStatus,
-      },
+      } } : {}),
       mode: config.demo ? 'demo' : 'manual',
     });
   });

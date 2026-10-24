@@ -9,6 +9,9 @@ import { hashToken } from '../src/rules.js';
 import { sessionCookieOptions, SESSION_TTL_MS } from '../src/sessions.js';
 import { listen, testConfig } from './helpers.js';
 
+const { verifyGoogleCredentialMock } = vi.hoisted(() => ({ verifyGoogleCredentialMock: vi.fn() }));
+vi.mock('../src/google-auth.js', () => ({ verifyGoogleCredential: verifyGoogleCredentialMock }));
+
 describe('authentication failure handling', () => {
   const config = testConfig();
   const password = randomBytes(18).toString('base64url');
@@ -42,6 +45,28 @@ describe('authentication failure handling', () => {
       expect(otp.status).toBe(503);
       expect(await otp.text()).not.toContain('devCode');
     }
+    expect(prisma.session.create).not.toHaveBeenCalled();
+  });
+  it('allows Google login only for an existing authorized seller email', async () => {
+    verifyGoogleCredentialMock.mockResolvedValue({ subject: 'verified-seller-subject', email: seller.email, name: seller.name });
+    const sellerLogin = await fetch(`${server.url}/api/auth/google`, { method: 'POST', headers, body: JSON.stringify({ credential: 'verified-google-token', role: 'SELLER' }) });
+    expect(sellerLogin.status).toBe(200);
+    expect((await sellerLogin.json()).seller).toMatchObject({ id: seller.id, email: seller.email });
+    expect(prisma.session.create).toHaveBeenCalled();
+
+    const sellerUser = { id: 'synthetic-user', email: seller.email, status: 'ACTIVE', googleSubject: null, passwordHash: seller.passwordHash, memberships: [], deliveryProfile: null };
+    vi.mocked(prisma.seller.findUnique).mockResolvedValue({ ...seller, userId: sellerUser.id });
+    vi.spyOn(prisma.user, 'findUnique').mockResolvedValueOnce(null).mockResolvedValueOnce(sellerUser as never);
+    const updateUser = vi.spyOn(prisma.user, 'update').mockResolvedValue({ ...sellerUser, googleSubject: 'verified-seller-subject' } as never);
+    const linkedSellerLogin = await fetch(`${server.url}/api/auth/google`, { method: 'POST', headers, body: JSON.stringify({ credential: 'verified-google-token', role: 'SELLER' }) });
+    expect(linkedSellerLogin.status).toBe(200);
+    expect(updateUser).toHaveBeenCalledWith(expect.objectContaining({ where: { id: sellerUser.id }, data: { googleSubject: 'verified-seller-subject' } }));
+
+    vi.mocked(prisma.seller.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.session.create).mockClear();
+    const unapproved = await fetch(`${server.url}/api/auth/google`, { method: 'POST', headers, body: JSON.stringify({ credential: 'verified-other-google-token', role: 'SELLER' }) });
+    expect(unapproved.status).toBe(403);
+    expect((await unapproved.json()).error.code).toBe('ROLE_ASSIGNMENT_RESTRICTED');
     expect(prisma.session.create).not.toHaveBeenCalled();
   });
   it.each(['SELLER', 'ADMIN'])('rejects self assignment of %s role while permitting customer signup and delivery applications', role => {
