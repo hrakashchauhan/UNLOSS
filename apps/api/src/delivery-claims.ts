@@ -113,7 +113,17 @@ export function registerDeliveryClaimRoutes(app: Express, prisma: PrismaClient, 
   app.post('/api/admin/delivery-accounts/:id/review', ...adminOnly, async (req, res) => {
     const v = z.object({ action: z.enum(['APPROVE', 'REJECT']), reason: z.string().trim().max(500).optional() }).parse(req.body);
     if (v.action === 'REJECT' && !v.reason) throw err('REASON_REQUIRED', 'Rejection reason required', 400);
-    const profile = await prisma.deliveryProfile.update({ where: { id: String(req.params.id) }, data: { reviewStatus: v.action === 'APPROVE' ? 'APPROVED' : 'REJECTED', reviewedAt: new Date(), rejectionReason: v.reason || null } });
+    const reviewer = currentUser(res)!;
+    const profile = await prisma.$transaction(async tx => {
+      const current = await tx.deliveryProfile.findUnique({ where: { id: String(req.params.id) } });
+      if (!current) throw err('NOT_FOUND', 'Delivery application not found', 404);
+      const status = v.action === 'APPROVE' ? 'APPROVED' : 'REJECTED';
+      const updated = await tx.deliveryProfile.update({ where: { id: current.id }, data: { reviewStatus: status, reviewedBy: reviewer.id, reviewedAt: new Date(), rejectionReason: v.reason || null } });
+      await tx.roleMembership.upsert({ where: { userId_role: { userId: current.userId, role: 'DELIVERY' } }, create: { userId: current.userId, role: 'DELIVERY', status: status === 'APPROVED' ? 'ACTIVE' : 'REJECTED', grantedBy: reviewer.id }, update: { status: status === 'APPROVED' ? 'ACTIVE' : 'REJECTED', grantedBy: reviewer.id, grantedAt: new Date() } });
+      await tx.auditLog.create({ data: { actorUserId: reviewer.id, actorRole: 'ADMIN', action: `DELIVERY_APPLICATION_${v.action}`, entityType: 'DeliveryProfile', entityId: updated.id, metadata: { userId: current.userId, reason: v.reason || null } } });
+      await tx.appNotification.create({ data: { userId: current.userId, type: 'DELIVERY_APPLICATION_REVIEWED', title: status === 'APPROVED' ? 'Delivery account approved' : 'Delivery application update', body: status === 'APPROVED' ? 'Your delivery account is approved. Sign in to open your delivery dashboard.' : `Your delivery application was not approved. ${v.reason || 'Contact support for next steps.'}` } });
+      return updated;
+    });
     res.json({ profile });
   });
 }

@@ -65,7 +65,7 @@ export function CustomerDashboard() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <LiveIndicator onLiveEvent={() => void loadCustomerOrders()} />
-            {mode === 'demo' && (
+            {mode === 'demo' && user?.roles.includes('ADMIN') && (
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button className="button" style={{ minHeight: '34px', fontSize: '.8rem', padding: '4px 10px' }} onClick={() => switchRole('SELLER')}>
                   Switch to Seller
@@ -87,7 +87,7 @@ export function CustomerDashboard() {
           </div>
         </header>
 
-        {mode === 'demo' && (
+        {mode === 'demo' && user?.roles.includes('ADMIN') && (
           <div className="notice" style={{ marginBottom: '20px', padding: '10px 14px', borderRadius: '4px' }}>
             <b>DATABASE-BACKED LOCAL DEMO · CUSTOMER SESSION</b> — View your incoming parcels, track progress, scan your private Customer QR, and verify delivery receipt with a fresh OTP.
           </div>

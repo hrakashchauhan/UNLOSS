@@ -182,7 +182,7 @@ export function DeliveryDashboard() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <LiveIndicator onLiveEvent={() => void loadData()} />
-            {mode === 'demo' && (
+            {mode === 'demo' && user?.roles.includes('ADMIN') && (
               <div style={{ display: 'flex', gap: '6px' }}>
                 <button className="button" style={{ minHeight: '34px', fontSize: '.8rem', padding: '4px 10px' }} onClick={() => switchRole('SELLER')}>
                   Switch to Seller
@@ -204,7 +204,7 @@ export function DeliveryDashboard() {
           </div>
         </header>
 
-        {mode === 'demo' && (
+        {mode === 'demo' && user?.roles.includes('ADMIN') && (
           <div className="notice" style={{ marginBottom: '20px', padding: '10px 14px', borderRadius: '4px' }}>
             <b>DATABASE-BACKED LOCAL DEMO · DELIVERY PERSON SESSION</b> — Persistent claims, GPS evidence verification, customer OTP handoff, and internal ₹5 ledger earnings.
           </div>

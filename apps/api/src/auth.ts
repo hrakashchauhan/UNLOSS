@@ -11,7 +11,7 @@ import { PrismaSessionStore, SESSION_COOKIE, SESSION_TTL_MS, sessionCookieOption
 import type { createRateLimits } from './rate-limits.js';
 
 export type PublicSeller = { id: string; email: string; name: string };
-export type AuthUser = { id: string; name: string; email: string | null; phone: string | null; roles: string[] };
+export type AuthUser = { id: string; name: string; email: string | null; phone: string | null; roles: string[]; deliveryStatus?: string };
 export const currentSeller = (res: Response): PublicSeller => res.locals.seller as PublicSeller;
 export const currentUser = (res: Response): AuthUser | undefined => res.locals.authUser as AuthUser | undefined;
 // Equal-cost comparison for unknown emails. This is a random dummy, never an account credential.
@@ -40,7 +40,7 @@ export function requireSeller(prisma: PrismaClient, config: Config): RequestHand
   };
 }
 
-export function requireAnySession(prisma: PrismaClient, config: Config): RequestHandler {
+export function requireAnySession(prisma: PrismaClient, _config: Config): RequestHandler {
   return async (req, res, next) => {
     try {
       if (req.session?.sellerId && req.session.sessionExpiresAt && req.session.sessionExpiresAt > Date.now()) {
@@ -50,9 +50,9 @@ export function requireAnySession(prisma: PrismaClient, config: Config): Request
         }
       }
       if (req.session?.userId && req.session.sessionExpiresAt && req.session.sessionExpiresAt > Date.now()) {
-        const user = await prisma.user.findUnique({ where: { id: req.session.userId }, include: { memberships: true } });
+        const user = await prisma.user.findUnique({ where: { id: req.session.userId }, include: { memberships: true, deliveryProfile: true } });
         if (user && user.status === 'ACTIVE' && hashToken(user.passwordHash || 'google-session') === req.session.credentialVersion) {
-          res.locals.authUser = { id: user.id, name: user.name, email: user.email, phone: user.phone, roles: user.memberships.filter(m => m.status === 'ACTIVE').map(m => m.role) } satisfies AuthUser;
+          res.locals.authUser = { id: user.id, name: user.name, email: user.email, phone: user.phone, roles: user.memberships.filter(m => m.status === 'ACTIVE').map(m => m.role), deliveryStatus: user.deliveryProfile?.reviewStatus } satisfies AuthUser;
         }
       }
       next();
@@ -67,6 +67,12 @@ export function requireRole(roles: string[]): RequestHandler {
     if (!roles.some(r => user.roles.includes(r))) throw err('FORBIDDEN', 'Insufficient permissions', 403);
     next();
   };
+}
+
+export function assertRoleRequestAllowed(role: string) {
+  if (!['CUSTOMER', 'DELIVERY'].includes(role)) {
+    throw err('ROLE_ASSIGNMENT_RESTRICTED', 'Seller access must be authorized by an administrator. Choose Customer or submit a delivery application for review.', 403);
+  }
 }
 
 export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: Config, store: PrismaSessionStore, limits: ReturnType<typeof createRateLimits>) {
@@ -140,7 +146,6 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
     });
   });
 
-  const authSeller = requireSeller(prisma, config);
   const authAny = requireAnySession(prisma, config);
   const requireAuth: RequestHandler = (_req, res, next) => {
     if (!res.locals.seller && !res.locals.authUser) throw err('UNAUTHENTICATED', 'Sign in required', 401);
@@ -152,7 +157,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
     const user = (res.locals as any).authUser || null;
     res.json({
       seller,
-      ...(user ? { user } : {}),
+      user,
       mode: config.demo ? 'demo' : 'manual',
     });
   });
@@ -166,14 +171,9 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
   app.get('/api/auth/session', authAny, async (_req, res) => {
     const seller = (res.locals as any).seller || null;
     const authUser = (res.locals as any).authUser || null;
-    let deliveryStatus: string | undefined;
-    if (authUser) {
-      const profile = await prisma.deliveryProfile.findUnique({ where: { userId: authUser.id } });
-      if (profile) deliveryStatus = profile.reviewStatus;
-    }
     res.json({
       seller,
-      user: authUser ? { ...authUser, deliveryStatus } : null,
+      user: authUser || null,
       mode: config.demo ? 'demo' : 'manual',
     });
   });
@@ -194,6 +194,8 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
       postalCode: z.string().trim().max(20).optional(),
     }).refine(data => data.email || data.phone, { message: 'Either email or phone is required' }).parse(req.body);
 
+    assertRoleRequestAllowed(v.role);
+
     if (v.email) {
       const existing = await prisma.user.findUnique({ where: { email: v.email } });
       if (existing) throw err('CONFLICT', 'An account with this email already exists', 409);
@@ -212,28 +214,20 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
           phone: v.phone || null,
           passwordHash,
           status: 'ACTIVE',
-          memberships: { create: { role: v.role, status: 'ACTIVE' } },
+          memberships: { create: v.role === 'DELIVERY'
+            ? [{ role: 'CUSTOMER', status: 'ACTIVE' }, { role: 'DELIVERY', status: 'PENDING' }]
+            : { role: 'CUSTOMER', status: 'ACTIVE' } },
           ...(v.role === 'DELIVERY' ? {
             deliveryProfile: {
               create: {
                 employer: v.employer || 'Independent Courier',
                 deliveryReference: v.deliveryReference || `REF-${randomBytes(4).toString('hex').toUpperCase()}`,
-                reviewStatus: config.demo ? 'APPROVED' : 'PENDING',
-                phoneVerifiedAt: config.demo ? new Date() : null,
+                reviewStatus: 'PENDING',
+                phoneVerifiedAt: null,
               },
             },
           } : {}),
-          ...(v.role === 'CUSTOMER' ? {
-            customerProfile: {
-              create: {
-                defaultName: v.name,
-                addressLine1: v.addressLine1 || null,
-                city: v.city || null,
-                state: v.state || null,
-                postalCode: v.postalCode || null,
-              },
-            },
-          } : {}),
+          customerProfile: { create: { defaultName: v.name, addressLine1: v.addressLine1 || null, city: v.city || null, state: v.state || null, postalCode: v.postalCode || null } },
         },
         include: { memberships: true, deliveryProfile: true },
       });
@@ -278,7 +272,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
         name: result.name,
         email: result.email,
         phone: result.phone,
-        roles: [v.role],
+        roles: result.memberships.filter(m => m.status === 'ACTIVE').map(m => m.role),
         deliveryStatus: result.deliveryProfile?.reviewStatus,
       },
       mode: config.demo ? 'demo' : 'manual',
@@ -291,6 +285,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
       credential: z.string().min(1).max(10000),
       role: z.enum(['SELLER', 'DELIVERY', 'CUSTOMER']).default('CUSTOMER'),
     }).parse(req.body);
+    assertRoleRequestAllowed(input.role);
     const identity = await verifyGoogleCredential(input.credential, config.googleClientId);
     const v = { email: identity.email, name: identity.name, role: input.role };
 
@@ -312,25 +307,20 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
           email: v.email,
           passwordHash: dummyPassword,
           status: 'ACTIVE',
-          ...(v.role === 'SELLER' ? { seller: { create: { email: v.email, name: v.name, passwordHash: dummyPassword } } } : {}),
-          memberships: { create: { role: v.role, status: 'ACTIVE' } },
+          memberships: { create: v.role === 'DELIVERY'
+            ? [{ role: 'CUSTOMER', status: 'ACTIVE' }, { role: 'DELIVERY', status: 'PENDING' }]
+            : { role: 'CUSTOMER', status: 'ACTIVE' } },
           ...(v.role === 'DELIVERY' ? {
             deliveryProfile: {
               create: {
                 employer: 'Not verified',
                 deliveryReference: `GOOG-${randomBytes(4).toString('hex').toUpperCase()}`,
-                reviewStatus: config.demo ? 'APPROVED' : 'PENDING',
-                phoneVerifiedAt: config.demo ? new Date() : null,
+                reviewStatus: 'PENDING',
+                phoneVerifiedAt: null,
               },
             },
           } : {}),
-          ...(v.role === 'CUSTOMER' ? {
-            customerProfile: {
-              create: {
-                defaultName: v.name,
-              },
-            },
-          } : {}),
+          customerProfile: { create: { defaultName: v.name } },
         },
         include: { memberships: true, deliveryProfile: true, seller: true },
       });
@@ -338,6 +328,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
       seller = user.seller || null;
     } else {
       if (user.status !== 'ACTIVE') throw err('FORBIDDEN', 'Account is not active', 403);
+      if (v.role === 'DELIVERY' && !user.deliveryProfile) throw err('DELIVERY_APPLICATION_REQUIRED', 'Sign up for delivery access first so an administrator can review your application.', 403);
       seller = await prisma.seller.findFirst({ where: { userId: user.id } });
     }
 
@@ -359,7 +350,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
         name: user.name,
         email: user.email,
         phone: user.phone,
-        roles: user.memberships?.filter((m: any) => m.status === 'ACTIVE').map((m: any) => m.role) || [v.role],
+        roles: user.memberships?.filter((m: any) => m.status === 'ACTIVE').map((m: any) => m.role) || [],
         deliveryStatus: user.deliveryProfile?.reviewStatus,
       },
       mode: config.demo ? 'demo' : 'manual',
@@ -402,7 +393,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
       role: z.enum(['SELLER', 'DELIVERY', 'CUSTOMER']).default('CUSTOMER'),
       name: z.string().trim().max(100).optional(),
     }).parse(req.body);
-
+    assertRoleRequestAllowed(v.role);
     const challenge = await prisma.authOtpChallenge.findFirst({
       where: {
         phone: v.phone,
@@ -437,24 +428,20 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
           phone: v.phone,
           passwordHash: dummyPassword,
           status: 'ACTIVE',
-          memberships: { create: { role: v.role, status: 'ACTIVE' } },
+          memberships: { create: v.role === 'DELIVERY'
+            ? [{ role: 'CUSTOMER', status: 'ACTIVE' }, { role: 'DELIVERY', status: 'PENDING' }]
+            : { role: 'CUSTOMER', status: 'ACTIVE' } },
           ...(v.role === 'DELIVERY' ? {
             deliveryProfile: {
               create: {
                 employer: 'Independent Courier',
                 deliveryReference: `PH-${randomBytes(4).toString('hex').toUpperCase()}`,
-                reviewStatus: config.demo ? 'APPROVED' : 'PENDING',
-                phoneVerifiedAt: config.demo ? new Date() : null,
+                reviewStatus: 'PENDING',
+          phoneVerifiedAt: null,
               },
             },
           } : {}),
-          ...(v.role === 'CUSTOMER' ? {
-            customerProfile: {
-              create: {
-                defaultName: v.name || `Customer ${v.phone.slice(-4)}`,
-              },
-            },
-          } : {}),
+          customerProfile: { create: { defaultName: v.name || `Customer ${v.phone.slice(-4)}` } },
         },
         include: { memberships: true, deliveryProfile: true },
       });
@@ -471,6 +458,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
         });
       }
     } else {
+      if (v.role === 'DELIVERY' && !user.deliveryProfile) throw err('DELIVERY_APPLICATION_REQUIRED', 'Sign up for delivery access first so an administrator can review your application.', 403);
       seller = await prisma.seller.findFirst({ where: { userId: user.id } });
     }
 
@@ -492,7 +480,7 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
         name: user.name,
         email: user.email,
         phone: user.phone,
-        roles: user.memberships?.filter((m: any) => m.status === 'ACTIVE').map((m: any) => m.role) || [v.role],
+        roles: user.memberships?.filter((m: any) => m.status === 'ACTIVE').map((m: any) => m.role) || [],
         deliveryStatus: user.deliveryProfile?.reviewStatus,
       },
       mode: config.demo ? 'demo' : 'manual',
@@ -501,6 +489,9 @@ export function registerAuthRoutes(app: Express, prisma: PrismaClient, config: C
 
   if (config.demo) {
     app.post('/api/auth/demo-switch', async (req, res) => {
+      if (!req.session?.userId || !req.session.sessionExpiresAt || req.session.sessionExpiresAt <= Date.now()) throw err('UNAUTHENTICATED', 'Sign in before switching local demo accounts', 401);
+      const actor = await prisma.user.findUnique({ where: { id: req.session.userId }, include: { memberships: true } });
+      if (!actor?.memberships.some(m => m.role === 'ADMIN' && m.status === 'ACTIVE')) throw err('FORBIDDEN', 'Only a signed-in local administrator can switch demo accounts', 403);
       const v = z.object({ role: z.enum(['SELLER', 'DELIVERY', 'CUSTOMER', 'ADMIN']) }).parse(req.body);
       let targetUser: any = null;
       let targetSeller: any = null;

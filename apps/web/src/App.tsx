@@ -9,8 +9,6 @@ import {SettingsPage} from './features/settings/Settings';
 import {PublicFlow} from './features/public/PublicFlow';
 import {DraftPublicView} from './features/public/DraftPublicView';
 import {ParcelWorkspace, ParcelQrEntry} from './features/parcels/ParcelWorkspace';
-import {DeliveryDashboard} from './features/delivery/DeliveryDashboard';
-import {CustomerDashboard} from './features/customer/CustomerDashboard';
 import {AdminDashboard} from './features/admin/AdminDashboard';
 import {AuthProvider, LoginRoute, RequireRole, RequireSeller, useAuth} from './features/auth/Auth';
 import {DEMO_ENABLED} from './config';
@@ -22,6 +20,7 @@ export function App(){
   <Route path="/delivery/:token" element={<PublicRoute kind="delivery"/>}/>
   <Route path="/scan/:kind/:token" element={<ScanRoute/>}/>
   <Route path="/customer/:token" element={<PublicRoute kind="customer"/>}/>
+  <Route path="/customer-otp/:token" element={<CustomerOtpRoute/>}/>
   <Route path="/draft/delivery/:token" element={<DraftPublicView kind="delivery"/>}/>
   <Route path="/draft/customer/:token" element={<DraftPublicView kind="customer"/>}/>
   {DEMO_ENABLED && <><Route path="/demo" element={<DemoHome/>}/>
@@ -63,13 +62,14 @@ export function App(){
 }
 
 function PublicRoute({kind}:{kind:'delivery'|'customer'}){const {token=''}=useParams();return <ParcelQrEntry key={kind+token} kind={kind} token={token}/>}
+function CustomerOtpRoute(){const {token=''}=useParams();return <PublicFlow key={token} kind="customer" token={token}/>}
 
 function ScanRoute(){const {kind,token=''}=useParams();return <ParcelQrEntry kind={kind==='delivery'?'delivery':'customer'} token={token}/>;}
 
 function SellerApp(){
  const location=useLocation();
  const menuButton=useRef<HTMLButtonElement>(null),closeButton=useRef<HTMLButtonElement>(null),navigation=useRef<HTMLElement>(null);
- const {seller,mode,signOut,switchRole}=useAuth();
+ const {seller,user,mode,signOut,switchRole}=useAuth();
  const [mobileNav,setMobileNav]=useState(false),[signOutBusy,setSignOutBusy]=useState(false),[signOutError,setSignOutError]=useState('');
  useEffect(()=>{
   if(!mobileNav)return;
@@ -102,7 +102,7 @@ function SellerApp(){
   {mobileNav&&<button aria-label="Close navigation" className="nav-scrim" onClick={()=>{setMobileNav(false);menuButton.current?.focus()}}/>}
    <main className="main-area" id="main-content" tabIndex={-1} inert={mobileNav}><header className="topbar"><button ref={menuButton} className="icon-btn mobile-menu" aria-label="Open navigation" aria-expanded={mobileNav} onClick={()=>setMobileNav(true)}><Menu size={20}/></button><div className="crumb">Workspace <ChevronRight size={14}/><b>{pretty(section)}</b></div>
    <div className="top-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Link className="button" to="/parcels">My parcels & wallet</Link><LiveIndicator />
-     {mode==='demo' && (
+     {mode==='demo' && user?.roles.includes('ADMIN') && (
        <div style={{ display: 'flex', gap: '4px' }}>
          <button className="button" style={{ minHeight: '30px', fontSize: '.78rem', padding: '2px 8px' }} title="Switch to Delivery Person" onClick={() => switchRole('DELIVERY')}>
            <Truck size={12} style={{ marginRight: '4px', verticalAlign: 'middle' }} />Delivery

@@ -12,6 +12,10 @@ Open **http://127.0.0.1:5173**. The generated seller login is in ignored [local 
 
 The API uses port 3001 and the retained PostgreSQL test installation uses port 55432. The separate databases are **unloss_local_demo** for interactive testing and **unloss_test_phase1** for automated tests. A completed **SYNTHETIC-SMOKE-*** order and one 500-paise internal demo credit were retained for inspection. This is not a payout.
 
+With local `DEMO_MODE=true`, `db:seed` also creates fictional role accounts: the configured `SEED_SELLER_EMAIL`, `delivery@unloss.local`, `customer@unloss.local`, and `admin@unloss.local`. They use the locally configured seed password; the ignored `.local/LOCAL_ACCESS.txt` contains this machine's access instructions. The seeded delivery profile is explicitly synthetic and pre-approved only for the local demo. Do not use these accounts or credentials outside local development. Public signup can create customers; a delivery signup creates a pending application and administrator review activates courier access; seller access is provisioned by an administrator.
+
+Customer accounts see only parcels assigned to their user ID. Approved couriers see only parcels assigned through their delivery claim. For parcel handoff, the customer opens their personal QR and completes OTP acceptance; the courier scans their delivery QR, shares a fresh location, then records handoff. Local mode labels its test OTP and simulated ₹5 credit; no SMS or payout occurs.
+
 If Node services have stopped, with PostgreSQL running, use two terminals from the repository root:
 
 ~~~powershell
@@ -21,6 +25,8 @@ npm.cmd run dev:api
 ~~~powershell
 npm.cmd run dev:web
 ~~~
+
+Before a GitHub push, run `npm.cmd run typecheck`, `npm.cmd test`, `npm.cmd run build:web`, and the API production build `npm.cmd run build:api`. The API build regenerates Prisma Client, so stop any locally running API processes first if Windows reports the query-engine DLL is in use. Apply reviewed database migrations with `npm.cmd --prefix apps/api run db:migrate` after configuring the target `DATABASE_URL`; do not point test commands at production data.
 
 Use the exact 127.0.0.1 URL above to match APP_ORIGIN. Do not start duplicate services on occupied ports. For this machine's PostgreSQL restart command, see ignored .local/START_DATABASE.ps1. The retained database is local test infrastructure, not production hosting.
 

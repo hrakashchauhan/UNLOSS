@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
+import { assertRoleRequestAllowed } from '../src/auth.js';
 import { createLogger } from '../src/logger.js';
 import { hashToken } from '../src/rules.js';
 import { sessionCookieOptions, SESSION_TTL_MS } from '../src/sessions.js';
@@ -42,6 +43,25 @@ describe('authentication failure handling', () => {
       expect(await otp.text()).not.toContain('devCode');
     }
     expect(prisma.session.create).not.toHaveBeenCalled();
+  });
+  it.each(['SELLER', 'ADMIN'])('rejects self assignment of %s role while permitting customer signup and delivery applications', role => {
+    expect(() => assertRoleRequestAllowed('CUSTOMER')).not.toThrow();
+    expect(() => assertRoleRequestAllowed('DELIVERY')).not.toThrow();
+    try {
+      assertRoleRequestAllowed(role);
+      throw new Error('Role assignment unexpectedly succeeded');
+    } catch (error) {
+      expect(error).toMatchObject({ code: 'ROLE_ASSIGNMENT_RESTRICTED', status: 403 });
+    }
+  });
+  it('creates delivery applications as customer access with pending review status', async () => {
+    const response = await fetch(`${server.url}/api/auth/register`, { method: 'POST', headers, body: JSON.stringify({ name: 'Synthetic Courier', email: `courier-${randomBytes(6).toString('hex')}@example.invalid`, password: 'synthetic-test-password', role: 'DELIVERY' }) });
+    expect(response.status).toBe(201);
+    const data = await response.json();
+    expect(data.user.roles).toEqual(['CUSTOMER']);
+    expect(data.user.deliveryStatus).toBe('PENDING');
+    expect((await prisma.roleMembership.findMany({ where: { userId: data.user.id } })).map(m => [m.role,m.status])).toEqual([['CUSTOMER','ACTIVE'],['DELIVERY','PENDING']]);
+    expect((await prisma.deliveryProfile.findUniqueOrThrow({ where: { userId: data.user.id } })).reviewStatus).toBe('PENDING');
   });
   async function loginCookie() {
     const response = await fetch(`${server.url}/api/auth/login`, { method: 'POST', headers, body: loginBody() });

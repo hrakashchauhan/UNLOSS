@@ -53,27 +53,34 @@ describe('UNLOSS Final MVP End-to-End Directive Workflow', () => {
     };
   }
 
+  async function authorizeDemoSwitch(client: ReturnType<typeof makeSessionClient>) {
+    const response = await client('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: 'admin@unloss.local', password: 'SampleSellerPassword123!' }) });
+    expect(response.status).toBe(200);
+    expect((await response.json()).user?.roles).toContain('ADMIN');
+  }
+
   it('completes the exact 9-step UNLOSS parcel-verification product lifecycle', async () => {
     const sellerClient = makeSessionClient();
     const deliveryClient = makeSessionClient();
     const customerClient = makeSessionClient();
     const adminClient = makeSessionClient();
-
-    // Sign in to roles via demo-switch
+    await authorizeDemoSwitch(adminClient);
+    // Only the authorized admin session may switch fictional local test accounts.
+    await authorizeDemoSwitch(sellerClient);
     const sellerLogin = await (await sellerClient('/api/auth/demo-switch', { method: 'POST', body: JSON.stringify({ role: 'SELLER' }) })).json();
     expect(sellerLogin.seller).toBeDefined();
     const sellerId = sellerLogin.seller.id;
     const initialReward = await (await sellerClient('/api/rewards/summary')).json();
 
+    await authorizeDemoSwitch(deliveryClient);
     const deliveryLogin = await (await deliveryClient('/api/auth/demo-switch', { method: 'POST', body: JSON.stringify({ role: 'DELIVERY' }) })).json();
     expect(deliveryLogin.user).toBeDefined();
     const deliveryUserId = deliveryLogin.user.id;
 
+    await authorizeDemoSwitch(customerClient);
     const customerLogin = await (await customerClient('/api/auth/demo-switch', { method: 'POST', body: JSON.stringify({ role: 'CUSTOMER' }) })).json();
     expect(customerLogin.user).toBeDefined();
 
-    const adminLogin = await (await adminClient('/api/auth/demo-switch', { method: 'POST', body: JSON.stringify({ role: 'ADMIN' }) })).json();
-    expect(adminLogin.user).toBeDefined();
 
     // -------------------------------------------------------------------------
     // STEP 1: Seller creates a product — enters name, saves persistent draft & receives dual QR codes

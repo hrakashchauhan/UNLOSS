@@ -14,6 +14,7 @@ export interface AuthUser {
   roles: string[];
   deliveryStatus?: string;
 }
+type AuthResult = { seller?: Seller | null; user?: AuthUser | null };
 
 export type UserRole = 'SELLER' | 'DELIVERY' | 'CUSTOMER' | 'ADMIN';
 
@@ -24,11 +25,11 @@ export interface AuthContextValue {
   mode: 'demo' | 'manual';
   phase: AuthPhase;
   restore: (signal?: AbortSignal) => Promise<void>;
-  signIn: (email: string, password: string) => Promise<void>;
-  register: (payload: any) => Promise<void>;
-  signInWithGoogle: (credential: string, role?: UserRole) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<AuthResult>;
+  register: (payload: any) => Promise<AuthResult>;
+  signInWithGoogle: (credential: string, role?: UserRole) => Promise<AuthResult>;
   requestPhoneOtp: (phone: string) => Promise<{ challengeId: string; phone: string; devCode: string; message: string }>;
-  verifyPhoneOtp: (phone: string, code: string, role?: UserRole, name?: string) => Promise<void>;
+  verifyPhoneOtp: (phone: string, code: string, role?: UserRole, name?: string) => Promise<AuthResult>;
   switchRole: (role: UserRole) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -86,6 +87,7 @@ export function AuthProvider() {
     setUser(response.user || null);
     setMode(response.mode === 'demo' ? 'demo' : 'manual');
     setPhase('authenticated');
+    return response;
   }, []);
 
   const register = useCallback(async (payload: any) => {
@@ -97,6 +99,7 @@ export function AuthProvider() {
     setUser(response.user || null);
     setMode(response.mode === 'demo' ? 'demo' : 'manual');
     setPhase('authenticated');
+    return response;
   }, []);
 
   const signInWithGoogle = useCallback(async (credential: string, role: UserRole = 'CUSTOMER') => {
@@ -108,6 +111,7 @@ export function AuthProvider() {
     setUser(response.user || null);
     setMode(response.mode === 'demo' ? 'demo' : 'manual');
     setPhase('authenticated');
+    return response;
   }, []);
 
   const requestPhoneOtp = useCallback(async (phone: string) => {
@@ -126,6 +130,7 @@ export function AuthProvider() {
     setUser(response.user || null);
     setMode(response.mode === 'demo' ? 'demo' : 'manual');
     setPhase('authenticated');
+    return response;
   }, []);
 
   const switchRole = useCallback(async (role: UserRole) => {
@@ -193,11 +198,12 @@ export function RequireRole({ allowedRoles }: { allowedRoles: UserRole[] }) {
 
   const hasPermission = allowedRoles.some(r => effectiveRoles.includes(r));
   if (!hasPermission) {
+    const deliveryPending = allowedRoles.includes('DELIVERY') && !!user?.deliveryStatus;
     return (
       <main className="recovery-screen">
-        <div className="eyebrow" style={{ color: '#047857', fontWeight: 700 }}>ROLE RESTRICTED</div>
-        <h1>Access Restricted</h1>
-        <p>This workspace is restricted to <b>{allowedRoles.join(', ')}</b> accounts. Your active session currently has role(s): <b>{effectiveRoles.join(', ') || 'NONE'}</b>.</p>
+        <div className="eyebrow" style={{ color: '#047857', fontWeight: 700 }}>{deliveryPending?'DELIVERY APPLICATION':'ROLE RESTRICTED'}</div>
+        <h1>{deliveryPending?`Application ${user?.deliveryStatus?.toLowerCase()}`:'Access Restricted'}</h1>
+        <p>{deliveryPending?user?.deliveryStatus==='PENDING'?'Your delivery application is waiting for administrator review. You can use your customer account until it is approved.':user?.deliveryStatus==='REJECTED'?'Your delivery application was not approved. Sign in to customer access or contact the administrator for next steps.':'Your delivery access is suspended. Contact the administrator.':`This workspace is restricted to ${allowedRoles.join(', ')} accounts. Your active session currently has role(s): ${effectiveRoles.join(', ') || 'NONE'}.`}</p>
         <div style={{ display: 'flex', gap: '12px', marginTop: '20px', flexWrap: 'wrap' }}>
           {effectiveRoles.includes('SELLER') && <Link className="button primary" to="/dashboard">Go to Seller Workspace</Link>}
           {effectiveRoles.includes('DELIVERY') && <Link className="button primary" to="/delivery-portal">Go to Delivery Portal</Link>}
@@ -230,8 +236,10 @@ export function LoginRoute() {
   if (phase === 'authenticated') {
     if (target.startsWith('/scan/') || target.startsWith('/parcels')) return <Navigate replace to={target} />;
     // If returning to a specific role, route intelligently
+    if (target === '/delivery-portal' && user?.deliveryStatus && !user.roles.includes('DELIVERY') && !seller) return <Navigate replace to="/delivery-portal" />;
+    if (user?.roles?.includes('ADMIN') && !seller) return <Navigate replace to="/admin" />;
     if (user?.roles?.includes('DELIVERY') && !seller) return <Navigate replace to="/delivery-portal" />;
-    if (user?.roles?.includes('CUSTOMER') && !seller && !user.roles.includes('DELIVERY')) return <Navigate replace to="/customer-portal" />;
+    if (user?.roles?.includes('CUSTOMER') && !seller) return <Navigate replace to="/customer-portal" />;
     return <Navigate replace to={target} />;
   }
   return <AuthView returnTo={target} />;
@@ -242,7 +250,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState<'signin' | 'register' | 'phone'>('signin');
-  const [selectedRole, setSelectedRole] = useState<'SELLER' | 'DELIVERY' | 'CUSTOMER'>('SELLER');
+  const [selectedRole, setSelectedRole] = useState<'SELLER' | 'DELIVERY' | 'CUSTOMER'>('CUSTOMER');
   const [error, setError] = useState('');
   const [pending, setPending] = useState(false);
 
@@ -269,11 +277,16 @@ function AuthView({ returnTo }: { returnTo: string }) {
   const [devOtp, setDevOtp] = useState('');
   const [otpMessage, setOtpMessage] = useState('');
 
-  function routeUser(role: string) {
-    if (returnTo.startsWith('/scan/') || returnTo.startsWith('/parcels')) { navigate(returnTo, { replace: true }); return; }
-    if (role === 'DELIVERY') navigate('/delivery-portal', { replace: true });
-    else if (role === 'CUSTOMER') navigate('/customer-portal', { replace: true });
-    else navigate(returnTo || '/dashboard', { replace: true });
+  function routeAuthenticated(result: AuthResult) {
+    if (returnTo.startsWith('/scan/') || returnTo.startsWith('/parcels')) {
+      navigate(returnTo, { replace: true });
+      return;
+    }
+    const roles = result.user?.roles || [];
+    if (result.seller || roles.includes('SELLER')) navigate('/dashboard', { replace: true });
+    else if (roles.includes('ADMIN')) navigate('/admin', { replace: true });
+    else if (roles.includes('DELIVERY')) navigate('/delivery-portal', { replace: true });
+    else navigate('/customer-portal', { replace: true });
   }
 
   // Handle Standard Sign In
@@ -282,8 +295,8 @@ function AuthView({ returnTo }: { returnTo: string }) {
     if (pending) return;
     setPending(true); setError('');
     try {
-      await signIn(email.trim(), password);
-      navigate(returnTo, { replace: true });
+      const result = await signIn(email.trim(), password);
+      routeAuthenticated(result);
     } catch (cause) { setError(errText(cause)); }
     finally { setPending(false); }
   }
@@ -294,7 +307,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
     if (pending) return;
     setPending(true); setError('');
     try {
-      await register({
+      const result = await register({
         name: regName.trim(),
         email: regEmail.trim() || undefined,
         phone: regPhone.trim() || undefined,
@@ -307,7 +320,7 @@ function AuthView({ returnTo }: { returnTo: string }) {
         state: selectedRole === 'CUSTOMER' ? state.trim() || undefined : undefined,
         postalCode: selectedRole === 'CUSTOMER' ? postalCode.trim() || undefined : undefined,
       });
-      routeUser(selectedRole);
+      routeAuthenticated(result);
     } catch (cause) { setError(errText(cause)); }
     finally { setPending(false); }
   }
@@ -317,8 +330,8 @@ function AuthView({ returnTo }: { returnTo: string }) {
     if (pending) return;
     setPending(true); setError('');
     try {
-      await signInWithGoogle(credential, selectedRole);
-      routeUser(selectedRole);
+      const result = await signInWithGoogle(credential, selectedRole);
+      routeAuthenticated(result);
     } catch (cause) { setError(errText(cause)); }
     finally { setPending(false); }
   }
@@ -343,8 +356,8 @@ function AuthView({ returnTo }: { returnTo: string }) {
     if (!otpCode || pending) return;
     setPending(true); setError('');
     try {
-      await verifyPhoneOtp(phoneInput.trim(), otpCode.trim(), selectedRole);
-      routeUser(selectedRole);
+      const result = await verifyPhoneOtp(phoneInput.trim(), otpCode.trim(), selectedRole);
+      routeAuthenticated(result);
     } catch (cause) { setError(errText(cause)); }
     finally { setPending(false); }
   }
@@ -513,7 +526,10 @@ function AuthView({ returnTo }: { returnTo: string }) {
             {/* Role Selector Cards */}
             <div>
               <span style={{ fontSize: '12px', fontWeight: 700, color: '#334155', display: 'block', marginBottom: '8px' }}>
-                SELECT YOUR ACCOUNT ROLE:
+                SELECT YOUR ACCOUNT TYPE:
+              </span>
+              <span className="muted" style={{ display: 'block', fontSize: '11px', marginBottom: '8px' }}>
+                Customer signup is open. Delivery applications stay pending until an administrator approves them. Seller access requires administrator authorization.
               </span>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
                 <button
