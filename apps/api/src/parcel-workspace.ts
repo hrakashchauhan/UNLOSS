@@ -83,7 +83,15 @@ export function registerParcelWorkspace(app: Express, prisma: PrismaClient, conf
     res.status(201).json({ transfer, message: 'Simulation complete. The withdrawal receipt is saved; no bank transfer was made and no real money was sent.' });
   });
   app.get('/api/workspace/parcels', auth, signedIn, async (_req, res) => {
-    const items = await prisma.order.findMany({ where: scope(res), orderBy: { updatedAt: 'desc' }, take: 100, select: { id: true, sellerReference: true, itemName: true, status: true, updatedAt: true } });
+    const items = await prisma.order.findMany({
+      where: scope(res), orderBy: { updatedAt: 'desc' }, take: 100,
+      select: {
+        id: true, sellerReference: true, itemName: true, itemDescription: true, quantity: true, status: true, deliveryAttempt: true, updatedAt: true,
+        product: { select: { name: true, sku: true } },
+        customerName: true, customerUser: { select: { name: true } },
+        claims: { where: { status: 'APPROVED' }, select: { deliveryUser: { select: { name: true } } } },
+      },
+    });
     res.json({ items });
   });
   app.get('/api/workspace/resolve/:purpose/:token', auth, signedIn, async (req, res) => {
@@ -111,7 +119,7 @@ export function registerParcelWorkspace(app: Express, prisma: PrismaClient, conf
     await publish(result.orderId); res.json(result);
   });
   app.get('/api/workspace/parcels/:id', auth, signedIn, async (req, res) => {
-    const order = await prisma.order.findFirst({ where: { id: String(req.params.id), ...scope(res) }, include: { customerUser: { select: identity }, claims: { where: { status: 'APPROVED' }, include: { deliveryUser: { select: identity } } }, locations: { where: { purgedAt: null, purgeAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, take: 150 }, events: { orderBy: { createdAt: 'desc' }, take: 60 }, earning: true, reservation: true } });
+    const order = await prisma.order.findFirst({ where: { id: String(req.params.id), ...scope(res) }, include: { product: { select: { name: true, description: true, sku: true } }, customerUser: { select: identity }, claims: { where: { status: 'APPROVED' }, include: { deliveryUser: { select: identity } } }, locations: { where: { purgedAt: null, purgeAt: { gt: new Date() } }, orderBy: { createdAt: 'desc' }, take: 150 }, events: { orderBy: { createdAt: 'desc' }, take: 60 }, earning: true, reservation: true } });
     if (!order) throw err('NOT_FOUND', 'Parcel not found', 404);
     const userId = currentUser(res)?.id;
     const sellerAccess = order.sellerId === res.locals.seller?.id;
@@ -123,8 +131,8 @@ export function registerParcelWorkspace(app: Express, prisma: PrismaClient, conf
       customerPhone: undefined,
       reservation: undefined,
       earning: deliveryAccess ? order.earning : undefined,
-      claims: order.claims.map(claim => ({ ...claim, deliveryUser: deliveryAccess ? claim.deliveryUser : { id: '', name: 'Assigned courier', email: '' } })),
-      customerUser: customerAccess ? order.customerUser : { id: '', name: 'Recipient', email: '' },
+      claims: order.claims.map(claim => ({ ...claim, deliveryUser: deliveryAccess ? claim.deliveryUser : { id: '', name: claim.deliveryUser.name, email: '' } })),
+      customerUser: customerAccess ? order.customerUser : { id: '', name: order.customerName, email: '' },
     };
     res.json({ order: safeOrder, access: { seller: sellerAccess, customer: customerAccess, delivery: deliveryAccess }, nextPayoutAt: nextPayoutMonday(new Date()), paymentsEnabled: false });
   });

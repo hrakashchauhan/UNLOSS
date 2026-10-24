@@ -31,6 +31,8 @@ afterAll(async()=>{
 const call=(i:number,path:string,body?:unknown)=>f.request(path,body,false,{Cookie:accounts[i]!.cookie});
 it('connects distinct verified accounts; rejects outsiders and unverified assignments',async()=>{
  const result=await f.create();orderId=result.order.id;
+ const product=await f.prisma.product.create({data:{sellerId:f.seller.id,name:'Synthetic oak desk',sku:`SKU-${randomUUID()}`}});
+ await f.prisma.order.update({where:{id:orderId},data:{productId:product.id,itemName:product.name,quantity:2}});
  expect((await f.request(`/orders/${orderId}/participants`,{customerEmail:accounts[0]!.email,courierEmail:accounts[0]!.email})).status).toBe(400);
  expect((await f.request(`/orders/${orderId}/participants`,{customerEmail:accounts[0]!.email,courierEmail:accounts[1]!.email})).status).toBe(200);
  const unapproved=await f.prisma.user.create({data:{email:`${randomUUID()}@example.invalid`,name:'Synthetic Pending Courier',passwordHash:'synthetic',status:'ACTIVE',googleSubject:`synthetic-${randomUUID()}`,memberships:{create:{role:'DELIVERY',status:'PENDING'}},deliveryProfile:{create:{employer:'Test',deliveryReference:`P-${randomUUID()}`,reviewStatus:'PENDING'}}}});
@@ -43,6 +45,8 @@ it('connects distinct verified accounts; rejects outsiders and unverified assign
  expect((await call(0,`/workspace/parcels/${orderId}/qr`)).status).toBe(200);
  expect((await call(1,`/workspace/parcels/${orderId}/qr`)).status).toBe(200);
  expect((await f.request(`/workspace/scan/delivery/${new URL(q1.qr.deliveryUrl).pathname.split('/').pop()}`,{})).status).toBe(403);
+ const customerParcels=await (await call(0,'/workspace/parcels')).json(); expect(customerParcels.items[0]).toMatchObject({id:orderId,customerName:'Synthetic Customer',quantity:2,itemName:'Synthetic oak desk',product:{name:'Synthetic oak desk'},claims:[{deliveryUser:{name:'Synthetic account'}}]}); expect(JSON.stringify(customerParcels.items[0])).not.toMatch(/customerPhone|sellerId|email/);
+ const courierParcels=await (await call(1,'/workspace/parcels')).json(); expect(courierParcels.items[0]).toMatchObject({id:orderId,customerName:'Synthetic Customer',product:{name:'Synthetic oak desk'},claims:[{deliveryUser:{name:'Synthetic account'}}]});
  const dispatched=await f.create(); await f.dispatch(dispatched.order.id);
  const available=await call(1,'/delivery/pending'); expect(available.status).toBe(200);
  const availableBody=await available.json(); expect(availableBody.available.some((o:{id:string})=>o.id===dispatched.order.id)).toBe(true);
